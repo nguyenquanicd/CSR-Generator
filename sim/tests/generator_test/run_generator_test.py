@@ -125,6 +125,14 @@ def main():
     w4.save(gap)
     r = run([gap, sheet0, '--out', os.path.join(tmp, 'g')])
     check('empty row in the register table is skipped', r.returncode == 0)
+    # a workbook of the older 7-column layout (no repeat columns) is still read
+    w5 = openpyxl.load_workbook(wb_path)
+    ws5 = w5[sheet0]
+    ws5.delete_cols(8, 4)
+    narrow = os.path.join(tmp, 'narrow.xlsx')
+    w5.save(narrow)
+    r = run([narrow, sheet0, '--out', os.path.join(tmp, 'n')])
+    check('7-column workbook without repeat columns generates (registers of mode NONE)', r.returncode == 0)
     shutil.rmtree(tmp, ignore_errors=True)
     print('RESULT: %s (%d of %d checks)' % ('PASS' if all(results) else 'FAIL', sum(results), len(results)))
     return 0 if all(results) else 1

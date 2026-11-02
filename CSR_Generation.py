@@ -6,6 +6,7 @@
 #
 # Version 2.4: lint clean-up of the generated RTL (generate-loop names per rule HIE-05, 32-bit address
 #   compares, one branch statement per line in the read decode); behavior unchanged from version 2.3.
+#   A workbook with fewer than 11 columns (the older 7-column layout) is read without the repeat columns.
 # Version 2.3: add fixed and parameterized register replication
 # Version 2.2: add w0c, w2c, and r2c field types and a parameter-selected clock architecture
 # Version 2.1: a hardware write to a w1c field has priority over a software clear in the same cycle
@@ -922,6 +923,12 @@ def read_workbook(path, sheet_name):
     import openpyxl
     wb = openpyxl.load_workbook(path)
     ws = wb[sheet_name]
+
+    def cell(row, col):
+        """Value of a cell; None when the sheet is narrower than the column (7-column workbooks have no repeat columns)."""
+        cells = ws[row]
+        return cells[col].value if col < len(cells) else None
+
     start_config = 0
     start_reg = 0
     reg_list = []
@@ -943,40 +950,40 @@ def read_workbook(path, sheet_name):
     for row in range(1, ws.max_row + 1):
         if start_reg == 0:
             if start_config == 0:
-                if 'Table - Configuration' in str(ws[row][start_col].value):
+                if 'Table - Configuration' in str(cell(row, start_col)):
                     start_config = 1
             else:
-                label = str(ws[row][start_col].value)
+                label = str(cell(row, start_col))
                 if 'Module Name' in label:
-                    cfg['module_name'] = ws[row][start_col + 1].value
+                    cfg['module_name'] = cell(row, start_col + 1)
                 if 'Protocol' in label:
-                    cfg['protocol'] = ws[row][start_col + 1].value
+                    cfg['protocol'] = cell(row, start_col + 1)
                 if 'Data Width' in label:
-                    cfg['data_wd'] = int(ws[row][start_col + 1].value)
+                    cfg['data_wd'] = int(cell(row, start_col + 1))
                 if 'Address Width' in label:
-                    cfg['addr_wd'] = int(ws[row][start_col + 1].value)
+                    cfg['addr_wd'] = int(cell(row, start_col + 1))
                 if 'Asynchronous' in label:
-                    cfg['async_option'] = int(ws[row][start_col + 1].value)
+                    cfg['async_option'] = int(cell(row, start_col + 1))
                 if 'REGISTER' in label:
                     start_reg = 1
         else:
-            if ws[row][0].value is not None:
-                reg_name = ws[row][reg_col].value
-                raw_regs.append({"name": reg_name, "offset": ws[row][offset_col].value, "reset": ws[row][reset_col].value,
-                                 "description": ws[row][des_col].value, "bits": [],
-                                 "repeat_mode": ws[row][repeat_mode_col].value,
-                                 "repeat_count": ws[row][repeat_count_col].value,
-                                 "offset_stride": ws[row][offset_stride_col].value,
-                                 "max_count": ws[row][max_count_col].value})
+            if cell(row, 0) is not None:
+                reg_name = cell(row, reg_col)
+                raw_regs.append({"name": reg_name, "offset": cell(row, offset_col), "reset": cell(row, reset_col),
+                                 "description": cell(row, des_col), "bits": [],
+                                 "repeat_mode": cell(row, repeat_mode_col),
+                                 "repeat_count": cell(row, repeat_count_col),
+                                 "offset_stride": cell(row, offset_stride_col),
+                                 "max_count": cell(row, max_count_col)})
             else:
                 if not raw_regs:
                     continue
-                bit_name = ws[row][bit_name_col].value
-                bit_field = ws[row][bit_field_col].value
+                bit_name = cell(row, bit_name_col)
+                bit_field = cell(row, bit_field_col)
                 if bit_name is None and bit_field is None:
                     continue    # an empty row of the sheet is not a field
-                raw_regs[-1]["bits"].append((bit_name, bit_field, ws[row][bit_type_col].value,
-                                             ws[row][reset_col].value, ws[row][des_col].value))
+                raw_regs[-1]["bits"].append((bit_name, bit_field, cell(row, bit_type_col),
+                                             cell(row, reset_col), cell(row, des_col)))
     return cfg, raw_regs
 
 
