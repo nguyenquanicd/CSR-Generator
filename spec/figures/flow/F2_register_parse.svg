@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="1466" viewBox="0 0 1140 1466" font-family="Consolas, &#x27;DejaVu Sans Mono&#x27;, monospace" font-size="11">
+<title>F2  Register table: row classification and repeat expansion</title><rect width="100%" height="100%" fill="#ffffff"/>
+<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2b3a4a"/></marker></defs>
+<text x="8" y="16" font-size="12" font-weight="bold" fill="#1b2733">F2  Register table: row classification and repeat expansion</text>
+<polyline points="550.0,76.0 550.0,125.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="550.0,171.4 550.0,211.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="550.0,287.2 550.0,328.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="556.0" y="301.2" font-size="10" fill="#b23b3b" font-weight="bold">No</text>
+<polyline points="450.0,249.2 424.0,249.2 424.0,837.2 450.0,837.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="420.0" y="244.2" font-size="10" fill="#b23b3b" font-weight="bold">Yes: skip</text>
+<polyline points="655.0,366.8 705.0,366.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="665.0" y="357.8" font-size="10" fill="#b23b3b" font-weight="bold">Yes</text>
+<polyline points="550.0,404.8 550.0,467.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="556.0" y="418.8" font-size="10" fill="#b23b3b" font-weight="bold">No</text>
+<polyline points="850.0,398.8 850.0,837.2 650.0,837.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="550.0,517.8 550.0,580.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="680.0,618.8 765.0,618.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="690.0" y="609.8" font-size="10" fill="#b23b3b" font-weight="bold">No</text>
+<polyline points="550.0,656.8 550.0,711.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="556.0" y="670.8" font-size="10" fill="#b23b3b" font-weight="bold">Yes</text>
+<polyline points="550.0,761.4 550.0,799.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="650.0,837.2 716.0,837.2 716.0,148.4 690.0,148.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="656.0" y="832.2" font-size="10" fill="#b23b3b" font-weight="bold">Yes: loop</text>
+<polyline points="550.0,875.2 550.0,925.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="556.0" y="889.2" font-size="10" fill="#b23b3b" font-weight="bold">No</text>
+<polyline points="435.0,963.2 335.0,963.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="405.0" y="958.2" font-size="10" fill="#b23b3b" font-weight="bold">NONE</text>
+<polyline points="665.0,963.2 700.0,963.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="675.0" y="954.2" font-size="10" fill="#b23b3b" font-weight="bold">PARAMETERIZED</text>
+<polyline points="550.0,1001.2 550.0,1065.6" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="556.0" y="1015.2" font-size="10" fill="#b23b3b" font-weight="bold">FIXED</text>
+<polyline points="250.0,988.2 250.0,1232.0 410.0,1232.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="850.0,995.2 850.0,1232.0 690.0,1232.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="550.0,1129.6 550.0,1207.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="550.0,1257.0 550.0,1312.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<g><rect x="410.0" y="36.0" width="280" height="40" rx="20" fill="#e6efe7" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="60.0" text-anchor="middle" fill="#1b2733">Start: rows below the REGISTER header</text></g>
+<g><rect x="410.0" y="125.4" width="280" height="46" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="152.4" text-anchor="middle" fill="#1b2733">Take the next row</text></g>
+<g><polygon points="550.0,211.2 650.0,249.2 550.0,287.2 450.0,249.2" fill="#fff6e3" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="253.2" text-anchor="middle" fill="#1b2733">Row empty?</text></g>
+<g><polygon points="550.0,328.8 655.0,366.8 550.0,404.8 445.0,366.8" fill="#fff6e3" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="370.8" text-anchor="middle" fill="#1b2733">Column A has text?</text></g>
+<g><rect x="705.0" y="334.8" width="290" height="64" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="850.0" y="356.8" text-anchor="middle" fill="#1b2733">New register: name (A), offset (B),</text><text x="850.0" y="370.8" text-anchor="middle" fill="#1b2733">reset (F), description (G),</text><text x="850.0" y="384.8" text-anchor="middle" fill="#1b2733">repeat metadata (H-K)</text></g>
+<g><rect x="400.0" y="467.8" width="300" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="489.8" text-anchor="middle" fill="#1b2733">Field row: bit name (C), bit range (D),</text><text x="550.0" y="503.8" text-anchor="middle" fill="#1b2733">type (E), reset (F), description (G)</text></g>
+<g><polygon points="550.0,580.8 680.0,618.8 550.0,656.8 420.0,618.8" fill="#fff6e3" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="615.8" text-anchor="middle" fill="#1b2733">Type is rw, ro, rwi, w1c,</text><text x="550.0" y="629.8" text-anchor="middle" fill="#1b2733">w0c, w2c, r2c or reserved?</text></g>
+<g><rect x="765.0" y="598.8" width="170" height="40" rx="20" fill="#e6efe7" stroke="#1b2733" stroke-width="1.5"/><text x="850.0" y="622.8" text-anchor="middle" fill="#1b2733">Message, exit 1</text></g>
+<g><rect x="420.0" y="711.4" width="260" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="733.4" text-anchor="middle" fill="#1b2733">Append the field to the</text><text x="550.0" y="747.4" text-anchor="middle" fill="#1b2733">current register</text></g>
+<g><polygon points="550.0,799.2 650.0,837.2 550.0,875.2 450.0,837.2" fill="#fff6e3" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="841.2" text-anchor="middle" fill="#1b2733">More rows?</text></g>
+<g><polygon points="550.0,925.2 665.0,963.2 550.0,1001.2 435.0,963.2" fill="#fff6e3" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="960.2" text-anchor="middle" fill="#1b2733">REPEAT MODE</text><text x="550.0" y="974.2" text-anchor="middle" fill="#1b2733">of the register?</text></g>
+<g><rect x="165.0" y="938.2" width="170" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="250.0" y="960.2" text-anchor="middle" fill="#1b2733">NONE:</text><text x="250.0" y="974.2" text-anchor="middle" fill="#1b2733">one register</text></g>
+<g><rect x="700.0" y="931.2" width="300" height="64" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="850.0" y="953.2" text-anchor="middle" fill="#1b2733">PARAMETERIZED: one bank,</text><text x="850.0" y="967.2" text-anchor="middle" fill="#1b2733">PARA_&lt;BASE&gt;_COUNT default COUNT,</text><text x="850.0" y="981.2" text-anchor="middle" fill="#1b2733">limit MAX COUNT, address OFFSET + i*STRIDE</text></g>
+<g><rect x="415.0" y="1065.6" width="270" height="64" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="1087.6" text-anchor="middle" fill="#1b2733">FIXED: COUNT copies named</text><text x="550.0" y="1101.6" text-anchor="middle" fill="#1b2733">&lt;base&gt;_0 .. &lt;base&gt;_&lt;COUNT-1&gt;</text><text x="550.0" y="1115.6" text-anchor="middle" fill="#1b2733">at OFFSET + i*STRIDE</text></g>
+<g><rect x="410.0" y="1207.0" width="280" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="1229.0" text-anchor="middle" fill="#1b2733">Check names, alignment, address</text><text x="550.0" y="1243.0" text-anchor="middle" fill="#1b2733">width and overlap</text></g>
+<g><rect x="415.0" y="1312.8" width="270" height="40" rx="20" fill="#e6efe7" stroke="#1b2733" stroke-width="1.5"/><text x="550.0" y="1336.8" text-anchor="middle" fill="#1b2733">Registers ready (back to F1)</text></g>
+</svg>

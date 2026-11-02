@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1147" height="364" viewBox="0 0 1147 364" font-family="Consolas, &#x27;DejaVu Sans Mono&#x27;, monospace" font-size="11">
+<title>P04  Planned hwmode=setclr: per-bit hardware set and clear (set wins), software write as base</title><rect width="100%" height="100%" fill="#ffffff"/>
+<text x="8" y="14" font-size="12" font-weight="bold" fill="#1b2733">P04  Planned hwmode=setclr: per-bit hardware set and clear (set wins), software write as base</text>
+<polyline points="215.0,72.0 316.0,72.0 316.0,96.8 337.0,96.8" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="215.0,134.0 309.0,134.0 309.0,114.7 337.0,114.7" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="387.0,96.8 438.0,96.8 438.0,153.3 459.0,153.3" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="215.0,233.2 431.0,233.2 431.0,171.2 459.0,171.2" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="367.0,196.0 424.0,196.0 424.0,189.1 459.0,189.1" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="509.0,171.2 560.0,171.2 560.0,240.1 581.0,240.1" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="215.0,320.0 553.0,320.0 553.0,258.0 581.0,258.0" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="489.0,282.8 546.0,282.8 546.0,275.9 581.0,275.9" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="631.0,258.0 682.0,258.0 682.0,238.2 703.0,238.2" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="777.0,258.0 804.0,258.0 804.0,258.0 825.0,258.0" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="777.0,258.0 797.0,258.0 797.0,320.0 825.0,320.0" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="777.0,258.0 793.0,258.0 793.0,20.0 302.0,20.0 302.0,78.9 337.0,78.9" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<circle cx="793.0" cy="258.0" r="2.6" fill="#2b3a4a"/>
+<circle cx="797.0" cy="258.0" r="2.6" fill="#2b3a4a"/>
+<text x="205.0" y="76.0" text-anchor="end" fill="#1b2733">w_we_&lt;reg&gt;</text><polygon points="208.0,68.5 208.0,75.5 215.0,72.0" fill="#1b2733"/>
+<text x="205.0" y="138.0" text-anchor="end" fill="#1b2733">reg_wdata[n]</text><polygon points="208.0,130.5 208.0,137.5 215.0,134.0" fill="#1b2733"/>
+<g><polygon points="337.0,64.8 387.0,76.3 387.0,117.3 337.0,128.8" stroke="#1b2733" stroke-width="1.5" fill="#fff6e3"/><text x="340.0" y="81.9" font-size="9" fill="#1b2733">0</text><text x="340.0" y="117.7" font-size="9" fill="#1b2733">1</text><text x="340.0" y="99.8" font-size="9" fill="#1b2733">S</text><text x="384.0" y="99.8" font-size="9" text-anchor="end" fill="#1b2733">Y</text><text x="359.0" y="100.8" font-size="9" text-anchor="middle" fill="#46566a">MUX2</text><text x="362.0" y="60.8" font-size="9" text-anchor="middle" fill="#5b6b7b" font-style="italic">software write</text></g>
+<text x="205.0" y="237.2" text-anchor="end" fill="#1b2733">i_hw_clr_&lt;reg&gt;_&lt;field&gt;[n]</text><polygon points="208.0,229.7 208.0,236.7 215.0,233.2" fill="#1b2733"/>
+<g><rect x="337.0" y="185.0" width="30" height="22" rx="3" stroke="#1b2733" stroke-width="1.5" fill="#f4f7fb"/><text x="352.0" y="200.0" font-size="9" text-anchor="middle" fill="#46566a">TIEL</text></g>
+<g><polygon points="459.0,139.2 509.0,150.7 509.0,191.7 459.0,203.2" stroke="#1b2733" stroke-width="1.5" fill="#fff6e3"/><text x="462.0" y="156.3" font-size="9" fill="#1b2733">0</text><text x="462.0" y="192.1" font-size="9" fill="#1b2733">1</text><text x="462.0" y="174.2" font-size="9" fill="#1b2733">S</text><text x="506.0" y="174.2" font-size="9" text-anchor="end" fill="#1b2733">Y</text><text x="481.0" y="175.2" font-size="9" text-anchor="middle" fill="#46566a">MUX2</text><text x="484.0" y="135.2" font-size="9" text-anchor="middle" fill="#5b6b7b" font-style="italic">hardware clear</text></g>
+<text x="205.0" y="324.0" text-anchor="end" fill="#1b2733">i_hw_set_&lt;reg&gt;_&lt;field&gt;[n]</text><polygon points="208.0,316.5 208.0,323.5 215.0,320.0" fill="#1b2733"/>
+<g><rect x="459.0" y="271.8" width="30" height="22" rx="3" stroke="#1b2733" stroke-width="1.5" fill="#f4f7fb"/><text x="474.0" y="286.8" font-size="9" text-anchor="middle" fill="#46566a">TIEH</text></g>
+<g><polygon points="581.0,226.0 631.0,237.5 631.0,278.5 581.0,290.0" stroke="#1b2733" stroke-width="1.5" fill="#fff6e3"/><text x="584.0" y="243.1" font-size="9" fill="#1b2733">0</text><text x="584.0" y="278.9" font-size="9" fill="#1b2733">1</text><text x="584.0" y="261.0" font-size="9" fill="#1b2733">S</text><text x="628.0" y="261.0" font-size="9" text-anchor="end" fill="#1b2733">Y</text><text x="603.0" y="262.0" font-size="9" text-anchor="middle" fill="#46566a">MUX2</text><text x="606.0" y="222.0" font-size="9" text-anchor="middle" fill="#5b6b7b" font-style="italic">hardware set (wins)</text></g>
+<g><rect x="703.0" y="225.0" width="74" height="66" rx="4" stroke="#1b2733" stroke-width="1.5" fill="#e9f5ea"/><text x="706.0" y="241.2" font-size="9" fill="#1b2733">D</text><text x="706.0" y="261.0" font-size="9" fill="#1b2733">CK</text><polyline points="703.0,253.0 710.0,258.0 703.0,263.0" fill="none" stroke="#1b2733" stroke-width="1"/><text x="706.0" y="280.8" font-size="9" fill="#1b2733">RN</text><circle cx="702.5" cy="277.8" r="3.6" fill="#ffffff" stroke="#1b2733" stroke-width="1.3"/><text x="774.0" y="241.2" font-size="9" text-anchor="end" fill="#1b2733">Q</text><text x="740.0" y="266.0" font-size="9" text-anchor="middle" fill="#46566a">DFF_RN</text><text x="740.0" y="221.0" font-size="9" text-anchor="middle" fill="#5b6b7b" font-style="italic">reset value 0</text></g>
+<polygon points="818.0,254.5 818.0,261.5 825.0,258.0" fill="#1b2733"/><text x="831.0" y="262.0" fill="#1b2733">o_&lt;reg&gt;_&lt;field&gt;[n]</text>
+<polygon points="818.0,316.5 818.0,323.5 825.0,320.0" fill="#1b2733"/><text x="831.0" y="324.0" fill="#1b2733">w_&lt;reg&gt;_value[n]</text>
+<line x1="683.0" y1="258.0" x2="703.0" y2="258.0" stroke="#1565c0" stroke-width="1.3"/>
+<text x="680.0" y="261.0" font-size="9" text-anchor="end" fill="#1565c0">clk_reg</text>
+<line x1="683.0" y1="277.8" x2="703.0" y2="277.8" stroke="#b23b3b" stroke-width="1.3"/>
+<text x="680.0" y="280.8" font-size="9" text-anchor="end" fill="#b23b3b">rst_n_reg</text>
+</svg>

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="1198" viewBox="0 0 500 1198" font-family="Consolas, &#x27;DejaVu Sans Mono&#x27;, monospace" font-size="11">
+<title>F3  RTL text generation (one module per sheet)</title><rect width="100%" height="100%" fill="#ffffff"/>
+<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2b3a4a"/></marker></defs>
+<text x="8" y="16" font-size="12" font-weight="bold" fill="#1b2733">F3  RTL text generation (one module per sheet)</text>
+<polyline points="230.0,76.0 230.0,131.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,181.8 230.0,241.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,291.0 230.0,350.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,400.2 230.0,459.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,509.4 230.0,577.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,627.0 230.0,694.6" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,744.6 230.0,805.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,869.2 230.0,938.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,988.2 230.0,1044.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<g><rect x="90.0" y="36.0" width="280" height="40" rx="20" fill="#e6efe7" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="60.0" text-anchor="middle" fill="#1b2733">Start: registers and fields known</text></g>
+<g><rect x="80.0" y="131.8" width="300" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="153.8" text-anchor="middle" fill="#1b2733">Header comment (six fields), module name,</text><text x="230.0" y="167.8" text-anchor="middle" fill="#1b2733">parameters PARA_* and LPARA_*</text></g>
+<g><rect x="80.0" y="241.0" width="300" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="263.0" text-anchor="middle" fill="#1b2733">Port groups: clocks and resets, APB,</text><text x="230.0" y="277.0" text-anchor="middle" fill="#1b2733">access check, one group per register</text></g>
+<g><rect x="80.0" y="350.2" width="300" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="372.2" text-anchor="middle" fill="#1b2733">Internal signal declarations</text><text x="230.0" y="386.2" text-anchor="middle" fill="#1b2733">(reg_*, w_*), clock select (L15)</text></g>
+<g><rect x="80.0" y="459.4" width="300" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="481.4" text-anchor="middle" fill="#1b2733">APB decode, error check, capture flops</text><text x="230.0" y="495.4" text-anchor="middle" fill="#1b2733">(L09, L10, L11)</text></g>
+<g><rect x="65.0" y="577.0" width="330" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="599.0" text-anchor="middle" fill="#1b2733">Generate block: g_async_csr (L13, L14, L16)</text><text x="230.0" y="613.0" text-anchor="middle" fill="#1b2733">and g_sync_csr (L12), chosen by PARA_ASYNCHRONOUS</text></g>
+<g><rect x="80.0" y="694.6" width="300" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="716.6" text-anchor="middle" fill="#1b2733">Per register: address decode</text><text x="230.0" y="730.6" text-anchor="middle" fill="#1b2733">fixed (L17) or per index (L18)</text></g>
+<g><rect x="80.0" y="805.2" width="300" height="64" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="827.2" text-anchor="middle" fill="#1b2733">Per field: next-value logic by type</text><text x="230.0" y="841.2" text-anchor="middle" fill="#1b2733">(L01, L03 - L07), reset flop (L08),</text><text x="230.0" y="855.2" text-anchor="middle" fill="#1b2733">output assign, read value</text></g>
+<g><rect x="80.0" y="938.2" width="300" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="960.2" text-anchor="middle" fill="#1b2733">Read data mux (L19) and</text><text x="230.0" y="974.2" text-anchor="middle" fill="#1b2733">read data storage (L19 or L20)</text></g>
+<g><rect x="85.0" y="1044.0" width="290" height="40" rx="20" fill="#e6efe7" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="1068.0" text-anchor="middle" fill="#1b2733">Module text complete (back to F1)</text></g>
+</svg>

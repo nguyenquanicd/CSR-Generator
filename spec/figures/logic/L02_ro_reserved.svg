@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="781" height="211" viewBox="0 0 781 211" font-family="Consolas, &#x27;DejaVu Sans Mono&#x27;, monospace" font-size="11">
+<title>L02  Field types ro and reserved: the read value is the input (ro) or 0 (reserved); nothing is stored</title><rect width="100%" height="100%" fill="#ffffff"/>
+<text x="8" y="14" font-size="12" font-weight="bold" fill="#1b2733">L02  Field types ro and reserved: the read value is the input (ro) or 0 (reserved); nothing is stored</text>
+<polyline points="215.0,72.0 438.0,72.0 438.0,72.0 459.0,72.0" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="245.0,158.8 431.0,158.8 431.0,158.8 459.0,158.8" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<text x="205.0" y="76.0" text-anchor="end" fill="#1b2733">i_&lt;reg&gt;_&lt;field&gt;[n]  (ro)</text><polygon points="208.0,68.5 208.0,75.5 215.0,72.0" fill="#1b2733"/>
+<g><rect x="215.0" y="147.8" width="30" height="22" rx="3" stroke="#1b2733" stroke-width="1.5" fill="#f4f7fb"/><text x="230.0" y="162.8" font-size="9" text-anchor="middle" fill="#46566a">TIEL</text></g>
+<polygon points="452.0,68.5 452.0,75.5 459.0,72.0" fill="#1b2733"/><text x="465.0" y="76.0" fill="#1b2733">w_&lt;reg&gt;_value[n]  (ro bit)</text>
+<polygon points="452.0,155.3 452.0,162.3 459.0,158.8" fill="#1b2733"/><text x="465.0" y="162.8" fill="#1b2733">w_&lt;reg&gt;_value[n]  (reserved bit)</text>
+<text x="190.0" y="170.0" font-size="10" text-anchor="start" font-weight="normal" fill="#1b2733">A ro field has no flop: the input goes to the read value of the register. A reserved bit reads 0 and ignores writes.</text>
+</svg>

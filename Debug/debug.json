@@ -4,7 +4,7 @@
     "Function": "Used to check the configuration after generation",
     "Author": "Trthinh (Ethan)",
     "Generator": "PC",
-    "Generator version": "2.1",
+    "Generator version": "2.4",
     "Page": "VLSI Technology",
     "Table - Configuration": [
     {
@@ -12,107 +12,347 @@
         "Address Width": "16",
         "Data Width": "32",
         "Protocol": "APB",
-        "Asynchornous": "1"
+        "Asynchronous": "0"
     }
     ],
     "Table - Register Definition": [
         {
-        "Register Name": "abc",
+        "Register Name": "engine",
         "Offset": "0x0000",
+        "Repeat Mode": "NONE",
+        "Count or Default": "1",
+        "Offset Stride": "4",
+        "Maximum Count": "1",
         "Reset Value": "0x0",
-        "Descriprtion": "None",
+        "Descriprtion": "Global engine control and event status. Demonstrates every supported field access policy.",
         "Bits": [
             {
-                "Bit Name": "start0",
+                "Bit Name": "events",
                 "Bit Type": "ro",
-                "Bit Field": "[31]",
+                "Bit Field": "[31:24]",
                 "Reset Value": "0x0",
-                "Description": "External status bit, driven by i_abc_start0."
+                "Description": "Number of completed engine operations; supplied by hardware and read by software."
             },
             {
-                "Bit Name": "start1",
+                "Bit Name": "mode",
                 "Bit Type": "rw",
-                "Bit Field": "[30]",
+                "Bit Field": "[23:20]",
                 "Reset Value": "0x0",
-                "Description": "Software start control bit 1."
+                "Description": "Select operation mode: 0=idle, 1=single, 2=continuous, 3=diagnostic; other values are reserved."
             },
             {
-                "Bit Name": "start2",
+                "Bit Name": "start",
                 "Bit Type": "rwi",
-                "Bit Field": "[29]",
+                "Bit Field": "[19]",
                 "Reset Value": "0x0",
-                "Description": "Software/hardware start control bit 2."
+                "Description": "Software requests one operation by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
             },
             {
-                "Bit Name": "start3",
-                "Bit Type": "rw",
-                "Bit Field": "[28:27]",
+                "Bit Name": "fault",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
                 "Reset Value": "0x0",
-                "Description": "Software start control field 3."
+                "Description": "Sticky engine-fault flag. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
             },
             {
-                "Bit Name": "start4",
-                "Bit Type": "rwi",
-                "Bit Field": "[26:25]",
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
                 "Reset Value": "0x0",
-                "Description": "Software/hardware start control field 4."
+                "Description": "Sticky event-pending flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky overflow flag. Any software write to this register clears the field; a simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Completion flag. APB read returns its current value and then clears it; hardware update wins over read-clear."
             },
             {
                 "Bit Name": "reserved",
                 "Bit Type": "ro",
-                "Bit Field": "[24:0]",
+                "Bit Field": "[14:0]",
                 "Reset Value": "0x0",
-                "Description": "Reserved. Read-as-zero, write ignore."
+                "Description": "Reserved; reads as zero and has no hardware input."
             }
           ]
         },
         {
-        "Register Name": "def",
-        "Offset": "0x0004",
+        "Register Name": "port_0",
+        "Offset": "0x0100",
+        "Repeat Mode": "FIXED",
+        "Count or Default": "3",
+        "Offset Stride": "4",
+        "Maximum Count": "3",
         "Reset Value": "0x0",
-        "Descriprtion": "None",
+        "Descriprtion": "Per-port transfer control and event status. Expands to port_0 through port_2 at four-byte intervals.",
         "Bits": [
             {
-                "Bit Name": "start0",
+                "Bit Name": "event_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of completed transfers on this port; supplied by hardware."
+            },
+            {
+                "Bit Name": "mode",
                 "Bit Type": "rw",
-                "Bit Field": "[31]",
+                "Bit Field": "[23:20]",
                 "Reset Value": "0x0",
-                "Description": "Software start control bit 0."
+                "Description": "Select port mode: 0=disabled, 1=run, 2=step; other values are reserved."
             },
             {
-                "Bit Name": "start1",
+                "Bit Name": "start",
                 "Bit Type": "rwi",
-                "Bit Field": "[30]",
+                "Bit Field": "[19]",
                 "Reset Value": "0x0",
-                "Description": "Software/hardware start control bit 1."
+                "Description": "Software requests one port transfer by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
             },
             {
-                "Bit Name": "start2",
+                "Bit Name": "fault",
                 "Bit Type": "w1c",
-                "Bit Field": "[29]",
+                "Bit Field": "[18]",
                 "Reset Value": "0x0",
-                "Description": "Write-1-to-clear status bit 2."
+                "Description": "Sticky port-transfer fault. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
             },
             {
-                "Bit Name": "start3",
-                "Bit Type": "w1c",
-                "Bit Field": "[28:27]",
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
                 "Reset Value": "0x0",
-                "Description": "Write-1-to-clear status field 3."
+                "Description": "Sticky port-event flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
             },
             {
-                "Bit Name": "start4",
-                "Bit Type": "rwi",
-                "Bit Field": "[26:25]",
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
                 "Reset Value": "0x0",
-                "Description": "Software/hardware start control field 4."
+                "Description": "Sticky event-counter overflow. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Transfer-complete flag. APB read returns its current value and then clears it; hardware update wins."
             },
             {
                 "Bit Name": "reserved",
                 "Bit Type": "ro",
-                "Bit Field": "[24:0]",
+                "Bit Field": "[14:0]",
                 "Reset Value": "0x0",
-                "Description": "Reserved. Read-as-zero, write ignore."
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        },
+        {
+        "Register Name": "port_1",
+        "Offset": "0x0104",
+        "Repeat Mode": "FIXED",
+        "Count or Default": "3",
+        "Offset Stride": "4",
+        "Maximum Count": "3",
+        "Reset Value": "0x0",
+        "Descriprtion": "Per-port transfer control and event status. Expands to port_0 through port_2 at four-byte intervals.",
+        "Bits": [
+            {
+                "Bit Name": "event_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of completed transfers on this port; supplied by hardware."
+            },
+            {
+                "Bit Name": "mode",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Select port mode: 0=disabled, 1=run, 2=step; other values are reserved."
+            },
+            {
+                "Bit Name": "start",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests one port transfer by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "fault",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-transfer fault. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-event flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky event-counter overflow. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Transfer-complete flag. APB read returns its current value and then clears it; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        },
+        {
+        "Register Name": "port_2",
+        "Offset": "0x0108",
+        "Repeat Mode": "FIXED",
+        "Count or Default": "3",
+        "Offset Stride": "4",
+        "Maximum Count": "3",
+        "Reset Value": "0x0",
+        "Descriprtion": "Per-port transfer control and event status. Expands to port_0 through port_2 at four-byte intervals.",
+        "Bits": [
+            {
+                "Bit Name": "event_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of completed transfers on this port; supplied by hardware."
+            },
+            {
+                "Bit Name": "mode",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Select port mode: 0=disabled, 1=run, 2=step; other values are reserved."
+            },
+            {
+                "Bit Name": "start",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests one port transfer by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "fault",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-transfer fault. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-event flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky event-counter overflow. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Transfer-complete flag. APB read returns its current value and then clears it; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        },
+        {
+        "Register Name": "monitor",
+        "Offset": "0x0200",
+        "Repeat Mode": "PARAMETERIZED",
+        "Count or Default": "2",
+        "Offset Stride": "4",
+        "Maximum Count": "4",
+        "Reset Value": "0x0",
+        "Descriprtion": "Per-monitor capture control and event status. Default count is 2; the elaboration parameter allows 1 through 4 entries.",
+        "Bits": [
+            {
+                "Bit Name": "sample_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of samples captured by this monitor entry; supplied by hardware."
+            },
+            {
+                "Bit Name": "threshold",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Four-bit event-count threshold used by this monitor entry."
+            },
+            {
+                "Bit Name": "capture",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests a sample by writing 1; hardware clears the request when capture completes. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "error",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky capture-error flag. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky trigger-pending flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky lost-sample flag. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "match",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Threshold-match event. APB read returns its current value and then clears it; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
             }
           ]
         }

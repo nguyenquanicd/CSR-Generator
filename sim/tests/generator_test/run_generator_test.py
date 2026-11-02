@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Tests of CSR_Generation.py itself (TEST-001 and TEST-002 of the specification).
 
-Runs the tool on the reference workbook and on bad inputs and checks files, ports, exit status and determinism.
-Usage : python run_generator_test.py [WORKBOOK]   (default: CSR_GOLDEN_FORMAT.xlsx, or CSR_Example.xlsx)
+Runs the tool on the golden workbook and on bad inputs; checks files, ports, exit status and determinism.
+Usage : python run_generator_test.py [WORKBOOK]   (default: CSR_GOLDEN_FORMAT.xlsx)
 Needs : Python 3 and openpyxl. Exit 0 when every check passes.
 """
 import os
@@ -31,12 +31,13 @@ def run(args, cwd=None):
 def ports_of(sv):
     text = open(sv, encoding='utf-8').read()
     m = re.search(r'\)\s*\(\s*(.*?)\);', text, re.S)
-    return re.findall(r'(?m)^\s*(input|output)\s+(?:wire|logic)\s*(?:\[[^\]]+\])?\s*(\w+)\s*,?\s*$', m.group(1))
+    return re.findall(r'(?m)^\s*(input|output)\s+(?:wire|logic)\s*(?:\[[^\]]+\])*\s*(\w+)\s*,?\s*$', m.group(1))
 
 
 def expected_field_ports(ws):
     """Field ports expected by REQ-IF-003 from the register table of a sheet."""
-    exp, reg, started = set(), None, False
+    exp = set()
+    groups, current, started = [], None, False
     for row in ws.iter_rows(values_only=True):
         a = row[0]
         if not started:
@@ -44,21 +45,28 @@ def expected_field_ports(ws):
                 started = True
             continue
         if a:
-            reg = a
-        elif row[2] and row[2] != 'reserved':
-            t, n = row[4], '%s_%s' % (reg, row[2])
-            if t == 'ro':
-                exp.add('i_' + n)
-            else:
-                exp.add('o_' + n)
-                if t in ('rwi', 'w1c'):
-                    exp |= {'i_hw_wdata_' + n, 'i_hw_we_' + n}
+            current = {'base': a, 'mode': str(row[7] or 'NONE').strip().upper(),
+                       'count': int(row[8] or 1), 'fields': []}
+            groups.append(current)
+        elif current and row[2] and row[2] != 'reserved':
+            current['fields'].append((row[2], str(row[4]).strip().lower()))
+    for group in groups:
+        names = (['%s_%d' % (group['base'], index) for index in range(group['count'])]
+                 if group['mode'] == 'FIXED' else [group['base']])
+        for register_name in names:
+            for field_name, field_type in group['fields']:
+                name = '%s_%s' % (register_name, field_name)
+                if field_type == 'ro':
+                    exp.add('i_' + name)
+                else:
+                    exp.add('o_' + name)
+                    if field_type in ('rwi', 'w1c', 'w0c', 'w2c', 'r2c'):
+                        exp |= {'i_hw_wdata_' + name, 'i_hw_we_' + name}
     return exp
 
 
 def main():
-    wb_path = sys.argv[1] if len(sys.argv) > 1 else next(
-        p for p in (os.path.join(ROOT, 'CSR_GOLDEN_FORMAT.xlsx'), os.path.join(ROOT, 'CSR_Example.xlsx')) if os.path.exists(p))
+    wb_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'CSR_GOLDEN_FORMAT.xlsx')
     tmp = tempfile.mkdtemp()
     wb = openpyxl.load_workbook(wb_path)
     for sheet, asyn in (('CSR', 0), ('ASYNC_CSR', 1)):
@@ -72,16 +80,15 @@ def main():
         check('%s: exit 0' % sheet, r.returncode == 0)
         check('%s: module file, file list, debug dump' % sheet,
               os.path.isfile(sv) and os.path.isfile(os.path.join(out, 'RTL', 'filelist.f')) and os.path.isfile(os.path.join(out, 'Debug', 'debug.json')))
-        check('%s: synchronizer model only when Asynchronous = 1' % sheet,
-              os.path.isfile(os.path.join(out, 'RTL', 'models', 'm_csr_sync.sv')) == bool(asyn))
+        check('%s: synchronizer model present for parameter override' % sheet,
+              os.path.isfile(os.path.join(out, 'RTL', 'models', 'm_csr_sync.sv')))
         head = open(sv, encoding='utf-8').read()[:700]
         check('%s: header fields' % sheet, all(re.search(r'%s\s*:' % k, head) for k in ('Project', 'Author', 'AI Flow', 'AI Flow Page', 'Date', 'Description'))
               and 'Author       : Tester (user)' in head and 'Design Rule v2' in head)
         got = {n for d, n in ports_of(sv)}
         fixed = {'i_clk_apb', 'i_rst_n_apb', 'i_apb_psel', 'i_apb_penable', 'i_apb_pwrite', 'i_apb_paddr', 'i_apb_pwdata', 'i_apb_pstrb',
                  'i_apb_pprot', 'o_apb_pready', 'o_apb_pslverr', 'o_apb_prdata', 'i_protect_en', 'i_slverr_en'}
-        if asyn:
-            fixed |= {'i_clk_reg', 'i_rst_n_reg'}
+        fixed |= {'i_clk_reg', 'i_rst_n_reg'}
         check('%s: ports = fixed ports + field ports' % sheet, got == fixed | expected_field_ports(wb[sheet]), '(%d ports)' % len(got))
         # TEST-002: same inputs, same files except the Date field
         out2 = os.path.join(tmp, sheet + '_2')

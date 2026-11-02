@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="500" height="1114" viewBox="0 0 500 1114" font-family="Consolas, &#x27;DejaVu Sans Mono&#x27;, monospace" font-size="11">
+<title>F5  Regression flow of run_golden_test.py</title><rect width="100%" height="100%" fill="#ffffff"/>
+<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2b3a4a"/></marker></defs>
+<text x="8" y="16" font-size="12" font-weight="bold" fill="#1b2733">F5  Regression flow of run_golden_test.py</text>
+<polyline points="230.0,76.0 230.0,131.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,181.8 230.0,249.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,299.4 230.0,375.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,425.4 230.0,495.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="230.0,541.0 230.0,589.2" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<polyline points="335.0,627.2 436.0,627.2 436.0,400.4 410.0,400.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="341.0" y="622.2" font-size="10" fill="#b23b3b" font-weight="bold">Yes</text>
+<polyline points="230.0,665.2 230.0,706.8" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="236.0" y="679.2" font-size="10" fill="#b23b3b" font-weight="bold">No</text>
+<polyline points="230.0,782.8 230.0,837.4" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="236.0" y="796.8" font-size="10" fill="#b23b3b" font-weight="bold">Yes</text>
+<polyline points="135.0,744.8 64.0,744.8 64.0,980.0 90.0,980.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="105.0" y="739.8" font-size="10" fill="#b23b3b" font-weight="bold">No</text>
+<polyline points="230.0,887.4 230.0,960.0" fill="none" stroke="#2b3a4a" stroke-width="1.4" marker-end="url(#ar)"/>
+<g><rect x="70.0" y="36.0" width="320" height="40" rx="20" fill="#e6efe7" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="60.0" text-anchor="middle" fill="#1b2733">Start: run_golden_test.py [--mutants] [--quick]</text></g>
+<g><rect x="75.0" y="131.8" width="310" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="153.8" text-anchor="middle" fill="#1b2733">Generate sheets CSR and ASYNC_CSR</text><text x="230.0" y="167.8" text-anchor="middle" fill="#1b2733">into a temporary folder</text></g>
+<g><rect x="60.0" y="249.4" width="340" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="271.4" text-anchor="middle" fill="#1b2733">Compare with RTL/m_vlsi_csr.sv (Date ignored);</text><text x="230.0" y="285.4" text-anchor="middle" fill="#1b2733">check both sheets give the same source</text></g>
+<g><rect x="50.0" y="375.4" width="360" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="397.4" text-anchor="middle" fill="#1b2733">For each configuration (ASYNC, monitors, clock ratio):</text><text x="230.0" y="411.4" text-anchor="middle" fill="#1b2733">compile with iverilog and tb_csr_golden.sv</text></g>
+<g><rect x="70.0" y="495.0" width="320" height="46" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="522.0" text-anchor="middle" fill="#1b2733">Run vvp; read the TB PASS / TB FAIL line</text></g>
+<g><polygon points="230.0,589.2 335.0,627.2 230.0,665.2 125.0,627.2" fill="#fff6e3" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="624.2" text-anchor="middle" fill="#1b2733">More</text><text x="230.0" y="638.2" text-anchor="middle" fill="#1b2733">configurations?</text></g>
+<g><polygon points="230.0,706.8 325.0,744.8 230.0,782.8 135.0,744.8" fill="#fff6e3" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="748.8" text-anchor="middle" fill="#1b2733">--mutants?</text></g>
+<g><rect x="65.0" y="837.4" width="330" height="50" rx="4" fill="#f4f7fb" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="859.4" text-anchor="middle" fill="#1b2733">For each single-fault mutant:</text><text x="230.0" y="873.4" text-anchor="middle" fill="#1b2733">apply, simulate, require a failure</text></g>
+<g><rect x="90.0" y="960.0" width="280" height="40" rx="20" fill="#e6efe7" stroke="#1b2733" stroke-width="1.5"/><text x="230.0" y="984.0" text-anchor="middle" fill="#1b2733">RESULT: PASS / FAIL, exit code</text></g>
+</svg>

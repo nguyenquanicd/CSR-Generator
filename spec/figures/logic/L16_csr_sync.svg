@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="975" height="166" viewBox="0 0 975 166" font-family="Consolas, &#x27;DejaVu Sans Mono&#x27;, monospace" font-size="11">
+<title>L16  m_csr_sync: PARA_LEVELS flip-flops in series on the destination clock (default 2)</title><rect width="100%" height="100%" fill="#ffffff"/>
+<text x="8" y="14" font-size="12" font-weight="bold" fill="#1b2733">L16  m_csr_sync: PARA_LEVELS flip-flops in series on the destination clock (default 2)</text>
+<polyline points="215.0,72.0 334.0,72.0 334.0,52.2 355.0,52.2" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="429.0,72.0 474.0,72.0 474.0,52.2 495.0,52.2" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<polyline points="569.0,72.0 614.0,72.0 614.0,72.0 635.0,72.0" fill="none" stroke="#2b3a4a" stroke-width="1.3"/>
+<text x="205.0" y="76.0" text-anchor="end" fill="#1b2733">i_d</text><polygon points="208.0,68.5 208.0,75.5 215.0,72.0" fill="#1b2733"/>
+<g><rect x="355.0" y="39.0" width="74" height="66" rx="4" stroke="#1b2733" stroke-width="1.5" fill="#e9f5ea"/><text x="358.0" y="55.2" font-size="9" fill="#1b2733">D</text><text x="358.0" y="75.0" font-size="9" fill="#1b2733">CK</text><polyline points="355.0,67.0 362.0,72.0 355.0,77.0" fill="none" stroke="#1b2733" stroke-width="1"/><text x="358.0" y="94.8" font-size="9" fill="#1b2733">RN</text><circle cx="354.5" cy="91.8" r="3.6" fill="#ffffff" stroke="#1b2733" stroke-width="1.3"/><text x="426.0" y="55.2" font-size="9" text-anchor="end" fill="#1b2733">Q</text><text x="392.0" y="80.0" font-size="9" text-anchor="middle" fill="#46566a">DFF_RN</text><text x="392.0" y="35.0" font-size="9" text-anchor="middle" fill="#5b6b7b" font-style="italic">reg_sync[0]</text></g>
+<g><rect x="495.0" y="39.0" width="74" height="66" rx="4" stroke="#1b2733" stroke-width="1.5" fill="#e9f5ea"/><text x="498.0" y="55.2" font-size="9" fill="#1b2733">D</text><text x="498.0" y="75.0" font-size="9" fill="#1b2733">CK</text><polyline points="495.0,67.0 502.0,72.0 495.0,77.0" fill="none" stroke="#1b2733" stroke-width="1"/><text x="498.0" y="94.8" font-size="9" fill="#1b2733">RN</text><circle cx="494.5" cy="91.8" r="3.6" fill="#ffffff" stroke="#1b2733" stroke-width="1.3"/><text x="566.0" y="55.2" font-size="9" text-anchor="end" fill="#1b2733">Q</text><text x="532.0" y="80.0" font-size="9" text-anchor="middle" fill="#46566a">DFF_RN</text><text x="532.0" y="35.0" font-size="9" text-anchor="middle" fill="#5b6b7b" font-style="italic">reg_sync[PARA_LEVELS-1]</text></g>
+<polygon points="628.0,68.5 628.0,75.5 635.0,72.0" fill="#1b2733"/><text x="641.0" y="76.0" fill="#1b2733">o_q</text>
+<line x1="335.0" y1="72.0" x2="355.0" y2="72.0" stroke="#1565c0" stroke-width="1.3"/>
+<text x="332.0" y="75.0" font-size="9" text-anchor="end" fill="#1565c0">clk_dst</text>
+<line x1="475.0" y1="72.0" x2="495.0" y2="72.0" stroke="#1565c0" stroke-width="1.3"/>
+<text x="472.0" y="75.0" font-size="9" text-anchor="end" fill="#1565c0">clk_dst</text>
+<line x1="335.0" y1="91.8" x2="355.0" y2="91.8" stroke="#b23b3b" stroke-width="1.3"/>
+<text x="332.0" y="94.8" font-size="9" text-anchor="end" fill="#b23b3b">rst_n_dst</text>
+<line x1="475.0" y1="91.8" x2="495.0" y2="91.8" stroke="#b23b3b" stroke-width="1.3"/>
+<text x="472.0" y="94.8" font-size="9" text-anchor="end" fill="#b23b3b">rst_n_dst</text>
+<text x="380.0" y="130.0" font-size="10" text-anchor="start" font-weight="normal" fill="#1b2733" font-style="italic">... PARA_LEVELS stages in total</text>
+</svg>
