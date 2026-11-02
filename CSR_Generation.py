@@ -6,7 +6,8 @@
 #
 # Version 2.4: lint clean-up of the generated RTL (generate-loop names per rule HIE-05, 32-bit address
 #   compares, one branch statement per line in the read decode); behavior unchanged from version 2.3.
-#   A workbook with fewer than 11 columns (the older 7-column layout) is read without the repeat columns.
+#   A workbook with fewer than 11 columns (the older 7-column layout) is read without the repeat columns,
+#   and a register may have several 'reserved' fields.
 # Version 2.3: add fixed and parameterized register replication
 # Version 2.2: add w0c, w2c, and r2c field types and a parameter-selected clock architecture
 # Version 2.1: a hardware write to a w1c field has priority over a software clear in the same cycle
@@ -1109,7 +1110,7 @@ def main():
                     sys.exit(1)
                 field_name = str(bit_name).strip()
                 validate_identifier(field_name, f"Field name in {register_name}")
-                if field_name in seen_fields:
+                if field_name in seen_fields and field_name != RSVD_KEY:     # several reserved ranges are legal
                     print(f"ERROR: register {register_name} has duplicate field name {field_name}")
                     sys.exit(1)
                 seen_fields.add(field_name)

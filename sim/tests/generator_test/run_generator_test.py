@@ -133,6 +133,18 @@ def main():
     w5.save(narrow)
     r = run([narrow, sheet0, '--out', os.path.join(tmp, 'n')])
     check('7-column workbook without repeat columns generates (registers of mode NONE)', r.returncode == 0)
+    # a register may have several reserved fields
+    w6 = openpyxl.load_workbook(wb_path)
+    ws6 = w6[sheet0]
+    rrow = next(i for i in range(1, 60) if ws6.cell(i, 3).value == 'reserved')
+    ws6.cell(rrow, 4).value = '[14:8]'
+    ws6.insert_rows(rrow + 1)
+    for c, v in ((3, 'reserved'), (4, '[7:0]'), (5, 'ro'), (6, '0x0'), (7, 'Reserved; reads as zero and has no hardware input.')):
+        ws6.cell(rrow + 1, c).value = v
+    multi = os.path.join(tmp, 'multi_reserved.xlsx')
+    w6.save(multi)
+    r = run([multi, sheet0, '--out', os.path.join(tmp, 'm')])
+    check('several reserved fields in one register are accepted', r.returncode == 0)
     shutil.rmtree(tmp, ignore_errors=True)
     print('RESULT: %s (%d of %d checks)' % ('PASS' if all(results) else 'FAIL', sum(results), len(results)))
     return 0 if all(results) else 1
