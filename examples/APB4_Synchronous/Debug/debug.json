@@ -2,17 +2,23 @@
     "Project": "APB-CSR-Generator",
     "Module": "JSON debug file",
     "Function": "Used to check the configuration after generation",
-    "Author": "Trthinh (Ethan)",
+    "Author": "Nguyen Quan (user)",
     "Generator": "PC",
-    "Generator version": "2.4",
+    "Generator version": "3.0",
     "Page": "VLSI Technology",
     "Table - Configuration": [
     {
-        "Module Name": "m_vlsi_csr",
+        "Module Name": "m_vlsi_apb4_csr",
         "Address Width": "16",
         "Data Width": "32",
-        "Protocol": "APB",
-        "Asynchronous": "0"
+        "Protocol": "APB4",
+        "Asynchronous": "0",
+        "Strobe Mode": "HONOR",
+        "AXI Outstanding Mode": "SINGLE",
+        "AXI Read Depth": "1",
+        "AXI Write Depth": "1",
+        "AHB Endian": "LITTLE",
+        "Register Event Sideband": "1"
     }
     ],
     "Table - Register Definition": [
@@ -73,7 +79,7 @@
                 "Bit Type": "r2c",
                 "Bit Field": "[15]",
                 "Reset Value": "0x0",
-                "Description": "Completion flag. APB read returns its current value and then clears it; hardware update wins over read-clear."
+                "Description": "Completion flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
             },
             {
                 "Bit Name": "reserved",
@@ -141,7 +147,7 @@
                 "Bit Type": "r2c",
                 "Bit Field": "[15]",
                 "Reset Value": "0x0",
-                "Description": "Transfer-complete flag. APB read returns its current value and then clears it; hardware update wins."
+                "Description": "Transfer-complete flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
             },
             {
                 "Bit Name": "reserved",
@@ -209,7 +215,7 @@
                 "Bit Type": "r2c",
                 "Bit Field": "[15]",
                 "Reset Value": "0x0",
-                "Description": "Transfer-complete flag. APB read returns its current value and then clears it; hardware update wins."
+                "Description": "Transfer-complete flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
             },
             {
                 "Bit Name": "reserved",
@@ -277,7 +283,7 @@
                 "Bit Type": "r2c",
                 "Bit Field": "[15]",
                 "Reset Value": "0x0",
-                "Description": "Transfer-complete flag. APB read returns its current value and then clears it; hardware update wins."
+                "Description": "Transfer-complete flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
             },
             {
                 "Bit Name": "reserved",
@@ -345,7 +351,7 @@
                 "Bit Type": "r2c",
                 "Bit Field": "[15]",
                 "Reset Value": "0x0",
-                "Description": "Threshold-match event. APB read returns its current value and then clears it; hardware update wins."
+                "Description": "Threshold-match event. A completed CSR read returns its current value and then clears the field; hardware update wins."
             },
             {
                 "Bit Name": "reserved",

@@ -2,15 +2,14 @@
 """Simulation regression of the RTL that CSR_Generation.py makes from CSR_GOLDEN_FORMAT.xlsx.
 
 Steps
-  1. Generate sheets CSR and ASYNC_CSR into a temporary folder.
-  2. Compare the generated module with RTL/m_vlsi_csr.sv of the repository (the Date field is ignored)
-     and check that the two sheets give the same module apart from its name and its default parameter.
-  3. Compile the module with tb_csr_golden.sv (iverilog) and run the configuration matrix: the
-     synchronous mode, the asynchronous mode with several clock ratios, and 1 to 4 monitor entries.
+  1. Generate sheets CSR and ASYNC_CSR into a temporary folder and compare their normalized RTL.
+  2. Generate the APB4 sideband example and compare it with its checked-in RTL (Date is ignored).
+  3. Compile and simulate the base map across synchronous/asynchronous clock modes and monitor counts,
+     then simulate the event-sideband example with directed read/write event checks.
   4. With --mutants: apply single-point faults to the generated module and require that the testbench fails.
 
 Usage : python run_golden_test.py [--mutants] [--quick] [--keep]
-Needs : Python 3, openpyxl (for the generator), iverilog and vvp in PATH (OSS CAD Suite).
+Needs : Python 3, openpyxl, and Icarus/vvp or Verilator plus g++.
 Exit  : 0 when every step passes.
 """
 import argparse
@@ -20,6 +19,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from verilator_manual_build import build_and_run
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
@@ -85,8 +88,8 @@ def find_tool(name):
     return None
 
 
-def generate(sheet, out):
-    return run([sys.executable, '-I', TOOL, WORKBOOK, sheet, '--out', out, '--project', 'APB-CSR-Generator',
+def generate(sheet, out, workbook=WORKBOOK):
+    return run([sys.executable, TOOL, workbook, sheet, '--out', out, '--project', 'APB-CSR-Generator',
                 '--author', 'Tester (user)'])
 
 
@@ -95,18 +98,57 @@ def body(text):
     return text.split('`timescale', 1)[1].replace('\r\n', '\n')
 
 
-def simulate(iverilog, vvp, rtl_files, cfg, workdir):
+def simulate(iverilog, vvp, rtl_files, cfg, workdir, sideband=False):
     asyn, mc, papb, preg = cfg
     vvp_file = os.path.join(workdir, 'sim.vvp')
     cmd = [iverilog, '-g2012', '-P', 'tb_csr_golden.ASYNC=%d' % asyn, '-P', 'tb_csr_golden.MC=%d' % mc,
            '-P', 'tb_csr_golden.P_APB=%d' % papb, '-P', 'tb_csr_golden.P_REG=%d' % preg,
            '-s', 'tb_csr_golden', '-o', vvp_file] + rtl_files + [TB]
+    if sideband:
+        cmd.insert(2, '-DCSR_EVENT_SIDEBAND')
     c = run(cmd)
     if c.returncode != 0:
-        return False, c.stderr[-400:]
+        return False, 'Icarus compile failed (exit %d): %s' % (c.returncode, c.stderr[-400:]), False
     r = run([vvp, vvp_file])
     last = [l for l in r.stdout.splitlines() if l.startswith('TB ')]
-    return (bool(last) and last[-1].startswith('TB PASS')), (last[-1] if last else r.stdout[-300:] + r.stderr[-300:])
+    if r.returncode != 0 or not last:
+        return False, 'Icarus runtime failed (exit %d): %s' % (
+            r.returncode, (r.stdout + r.stderr)[-400:]), False
+    return ((bool(last) and last[-1].startswith('TB PASS')),
+            (last[-1] if last else r.stdout[-300:] + r.stderr[-300:]), True)
+
+
+def simulate_with_fallback(iverilog, vvp, verilator, rtl_files, cfg, workdir,
+                           sideband=False, run_id='golden'):
+    if iverilog and vvp:
+        ok, message, compiled = simulate(iverilog, vvp, rtl_files, cfg, workdir, sideband)
+    else:
+        ok, message, compiled = False, 'Icarus/vvp is unavailable', False
+    if ok or compiled or not verilator:
+        return ok, message
+
+    asyn, mc, papb, preg = cfg
+    env = os.environ.copy()
+    env['VERILATOR_ROOT'] = r'C:\Tools\oss-cad-suite\share\verilator'
+    if not os.path.isdir(env['VERILATOR_ROOT']):
+        return False, message + '; Verilator fallback runtime directory is missing'
+    manual_dir = Path(workdir) / ('vlt_' + run_id)
+    defines = ['-DCSR_EVENT_SIDEBAND'] if sideband else []
+    params = ['-GASYNC=%d' % asyn, '-GMC=%d' % mc,
+              '-GP_APB=%d' % papb, '-GP_REG=%d' % preg]
+    vlt_ok, vlt_output = build_and_run(
+        verilator, 'tb_csr_golden', [*rtl_files, TB], params, manual_dir, env,
+        defines=defines, label=run_id, success_marker='TB PASS')
+    if not vlt_ok:
+        return False, message + '; Verilator fallback failed:\n' + vlt_output
+    if 'Icarus compile failed' in message:
+        reason = 'Icarus compile failed'
+    elif 'Icarus runtime failed' in message:
+        reason = 'Icarus runtime failed'
+    else:
+        reason = 'Icarus unavailable'
+    result = next((line.strip() for line in vlt_output.splitlines() if 'TB PASS' in line), 'TB PASS')
+    return vlt_ok, reason + '; Verilator direct g++ fallback: ' + result
 
 
 def main():
@@ -117,10 +159,13 @@ def main():
     args = ap.parse_args()
 
     iverilog, vvp = find_tool('iverilog'), find_tool('vvp')
-    if not iverilog or not vvp:
-        print('iverilog and vvp are needed (add the OSS CAD Suite bin folder to PATH)')
+    verilator = find_tool('verilator_bin')
+    if (not iverilog or not vvp) and not verilator:
+        print('Icarus/vvp or Verilator with g++ is needed (add the OSS CAD Suite bin folder to PATH)')
         return 2
-    work = tempfile.mkdtemp(prefix='csr_golden_')
+    temp_root = os.path.join(ROOT, '.test_tmp')
+    os.makedirs(temp_root, exist_ok=True)
+    work = tempfile.mkdtemp(prefix='csr_golden_', dir=temp_root)
     try:
         outs = {}
         for sheet in ('CSR', 'ASYNC_CSR'):
@@ -131,17 +176,34 @@ def main():
         sync_sv = os.path.join(outs['CSR'], 'RTL', 'm_vlsi_csr.sv')
         async_sv = os.path.join(outs['ASYNC_CSR'], 'RTL', 'm_vlsi_async_csr.sv')
         sync_model = os.path.join(outs['CSR'], 'RTL', 'models', 'm_csr_sync.sv')
-        repo_sv = os.path.join(ROOT, 'RTL', 'm_vlsi_csr.sv')
         gen = open(sync_sv, encoding='utf-8').read()
-        if os.path.isfile(repo_sv):
-            step('RTL/m_vlsi_csr.sv equals the generated module', body(open(repo_sv, encoding='utf-8').read()) == body(gen))
         asyn_text = open(async_sv, encoding='utf-8').read()
         norm = body(asyn_text).replace('m_vlsi_async_csr', 'm_vlsi_csr').replace("PARA_ASYNCHRONOUS = 32'd1", "PARA_ASYNCHRONOUS = 32'd0")
         step('sheets CSR and ASYNC_CSR differ only in the name and the default parameter', norm == body(gen))
 
-        for cfg in (QUICK if args.quick else FULL):
-            ok, msg = simulate(iverilog, vvp, [sync_model, sync_sv], cfg, work)
+        example_book = os.path.join(ROOT, 'examples', 'APB4_Synchronous', 'APB4_Synchronous_Config.xlsx')
+        example_out = os.path.join(work, 'APB4_SIDEBAND')
+        r = generate('CSR', example_out, example_book)
+        step('generate APB4 event-sideband example', r.returncode == 0, r.stderr[-250:] if r.returncode else '')
+        example_sv = os.path.join(example_out, 'RTL', 'm_vlsi_apb4_csr.sv')
+        example_model = os.path.join(example_out, 'RTL', 'models', 'm_csr_sync.sv')
+        repo_sv = os.path.join(ROOT, 'examples', 'APB4_Synchronous', 'RTL', 'm_vlsi_apb4_csr.sv')
+        if r.returncode == 0 and os.path.isfile(repo_sv):
+            step('APB4 example RTL matches its workbook (Date ignored)',
+                 body(open(repo_sv, encoding='utf-8').read()) == body(open(example_sv, encoding='utf-8').read()))
+
+        for index, cfg in enumerate(QUICK if args.quick else FULL):
+            ok, msg = simulate_with_fallback(iverilog, vvp, verilator,
+                                             [sync_model, sync_sv], cfg, work,
+                                             run_id='base_%02d' % index)
             step('simulation ASYNC=%d MC=%d P_APB=%d P_REG=%d' % cfg, ok, msg)
+
+        if os.path.isfile(example_sv):
+            ok, msg = simulate_with_fallback(
+                iverilog, vvp, verilator, [example_model, example_sv],
+                (0, 2, 10000, 10000), work, sideband=True,
+                run_id='apb4_event_sideband')
+            step('simulation APB4 register-event sideband', ok, msg)
 
         if args.mutants:
             for name, old, new in MUTANTS:
@@ -152,7 +214,9 @@ def main():
                 open(mut, 'w', encoding='utf-8').write(gen.replace(old, new, 1))
                 detected = False
                 for cfg in ((0, 2, 10000, 10000), (1, 2, 10000, 33000)):
-                    ok, _ = simulate(iverilog, vvp, [sync_model, mut], cfg, work)
+                    ok, _ = simulate_with_fallback(
+                        iverilog, vvp, verilator, [sync_model, mut], cfg, work,
+                        run_id='mutant_%02d_%d' % (len(fails), cfg[0]))
                     if not ok:
                         detected = True
                         break

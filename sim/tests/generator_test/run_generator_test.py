@@ -67,7 +67,9 @@ def expected_field_ports(ws):
 
 def main():
     wb_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'CSR_GOLDEN_FORMAT.xlsx')
-    tmp = tempfile.mkdtemp()
+    # Keep generated files inside the repository so restricted Windows
+    # environments can create and remove the test workspace.
+    tmp = tempfile.mkdtemp(prefix='.generator_test_', dir=ROOT)
     wb = openpyxl.load_workbook(wb_path)
     for sheet, asyn in (('CSR', 0), ('ASYNC_CSR', 1)):
         if sheet not in wb.sheetnames:
@@ -82,6 +84,9 @@ def main():
               os.path.isfile(sv) and os.path.isfile(os.path.join(out, 'RTL', 'filelist.f')) and os.path.isfile(os.path.join(out, 'Debug', 'debug.json')))
         check('%s: synchronizer model present for parameter override' % sheet,
               os.path.isfile(os.path.join(out, 'RTL', 'models', 'm_csr_sync.sv')))
+        debug = open(os.path.join(out, 'Debug', 'debug.json'), encoding='utf-8').read()
+        check('%s: debug author follows the requested author' % sheet,
+              '"Author": "Tester (user)"' in debug)
         head = open(sv, encoding='utf-8').read()[:700]
         check('%s: header fields' % sheet, all(re.search(r'%s\s*:' % k, head) for k in ('Project', 'Author', 'AI Flow', 'AI Flow Page', 'Date', 'Description'))
               and 'Author       : Tester (user)' in head and 'Design Rule v2' in head)
@@ -104,10 +109,10 @@ def main():
     sheet0 = 'CSR' if 'CSR' in w2.sheetnames else w2.sheetnames[0]
     for i in range(1, 12):
         if w2[sheet0].cell(i, 1).value == 'Protocol':
-            w2[sheet0].cell(i, 2).value = 'AXI'
+            w2[sheet0].cell(i, 2).value = 'UNKNOWN'
     w2.save(bad)
     r = run([bad, sheet0, '--out', os.path.join(tmp, 'y')])
-    check('protocol other than APB: exit status 1 and a message', r.returncode == 1 and 'not implemented' in r.stdout)
+    check('unsupported protocol: exit status 1 and a message', r.returncode == 1 and 'Protocol must be' in r.stdout)
     miss = os.path.join(tmp, 'missing_cfg.xlsx')
     w3 = openpyxl.load_workbook(wb_path)
     for i in range(1, 12):
@@ -145,6 +150,26 @@ def main():
     w6.save(multi)
     r = run([multi, sheet0, '--out', os.path.join(tmp, 'm')])
     check('several reserved fields in one register are accepted', r.returncode == 0)
+    # Register Event Sideband = 1 adds the four o_reg_* ports of an APB4 module; 2 is rejected
+    w7 = openpyxl.load_workbook(wb_path)
+    ws7 = w7[sheet0]
+    ws7.insert_rows(9)
+    ws7.cell(9, 1).value = 'Register Event Sideband'
+    ws7.cell(9, 2).value = 1
+    side = os.path.join(tmp, 'sideband.xlsx')
+    w7.save(side)
+    r = run([side, sheet0, '--out', os.path.join(tmp, 's')])
+    sv_side = os.path.join(tmp, 's', 'RTL', str(w7[sheet0].cell(3, 2).value) + '.sv')
+    side_ports = {n for d, n in ports_of(sv_side)} if r.returncode == 0 else set()
+    check('Register Event Sideband = 1 adds o_reg_rd_en, o_reg_rd_addr, o_reg_wr_en, o_reg_wr_addr',
+          side_ports >= {'o_reg_rd_en', 'o_reg_rd_addr', 'o_reg_wr_en', 'o_reg_wr_addr'})
+    text_side = open(sv_side, encoding='utf-8').read() if r.returncode == 0 else ''
+    check('Register Event Sideband: write event ORs only registers with a software-writable field',
+          'assign o_reg_wr_en' in text_side and 'assign o_reg_rd_en   = w_rd_en & (reg_addr[1:0] == 2\'b00);' in text_side)
+    ws7.cell(9, 2).value = 2
+    w7.save(side)
+    r = run([side, sheet0, '--out', os.path.join(tmp, 's2')])
+    check('Register Event Sideband = 2: exit status 1 and a message', r.returncode == 1 and 'Register Event Sideband' in r.stdout)
     shutil.rmtree(tmp, ignore_errors=True)
     print('RESULT: %s (%d of %d checks)' % ('PASS' if all(results) else 'FAIL', sum(results), len(results)))
     return 0 if all(results) else 1

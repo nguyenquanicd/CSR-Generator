@@ -1,0 +1,365 @@
+    {
+    "Project": "APB-CSR-Generator",
+    "Module": "JSON debug file",
+    "Function": "Used to check the configuration after generation",
+    "Author": "Nguyen Quan (user)",
+    "Generator": "PC",
+    "Generator version": "3.0",
+    "Page": "VLSI Technology",
+    "Table - Configuration": [
+    {
+        "Module Name": "m_vlsi_axil_queued_csr",
+        "Address Width": "16",
+        "Data Width": "32",
+        "Protocol": "AXI4-Lite",
+        "Asynchronous": "0",
+        "Strobe Mode": "HONOR",
+        "AXI Outstanding Mode": "QUEUED",
+        "AXI Read Depth": "2",
+        "AXI Write Depth": "4",
+        "AHB Endian": "LITTLE"
+    }
+    ],
+    "Table - Register Definition": [
+        {
+        "Register Name": "engine",
+        "Offset": "0x0000",
+        "Repeat Mode": "NONE",
+        "Count or Default": "1",
+        "Offset Stride": "4",
+        "Maximum Count": "1",
+        "Reset Value": "0x0",
+        "Descriprtion": "Global engine control and event status. Demonstrates every supported field access policy.",
+        "Bits": [
+            {
+                "Bit Name": "events",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of completed engine operations; supplied by hardware and read by software."
+            },
+            {
+                "Bit Name": "mode",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Select operation mode: 0=idle, 1=single, 2=continuous, 3=diagnostic; other values are reserved."
+            },
+            {
+                "Bit Name": "start",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests one operation by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "fault",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky engine-fault flag. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky event-pending flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky overflow flag. Any software write to this register clears the field; a simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Completion flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        },
+        {
+        "Register Name": "port_0",
+        "Offset": "0x0100",
+        "Repeat Mode": "FIXED",
+        "Count or Default": "3",
+        "Offset Stride": "4",
+        "Maximum Count": "3",
+        "Reset Value": "0x0",
+        "Descriprtion": "Per-port transfer control and event status. Expands to port_0 through port_2 at four-byte intervals.",
+        "Bits": [
+            {
+                "Bit Name": "event_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of completed transfers on this port; supplied by hardware."
+            },
+            {
+                "Bit Name": "mode",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Select port mode: 0=disabled, 1=run, 2=step; other values are reserved."
+            },
+            {
+                "Bit Name": "start",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests one port transfer by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "fault",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-transfer fault. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-event flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky event-counter overflow. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Transfer-complete flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        },
+        {
+        "Register Name": "port_1",
+        "Offset": "0x0104",
+        "Repeat Mode": "FIXED",
+        "Count or Default": "3",
+        "Offset Stride": "4",
+        "Maximum Count": "3",
+        "Reset Value": "0x0",
+        "Descriprtion": "Per-port transfer control and event status. Expands to port_0 through port_2 at four-byte intervals.",
+        "Bits": [
+            {
+                "Bit Name": "event_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of completed transfers on this port; supplied by hardware."
+            },
+            {
+                "Bit Name": "mode",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Select port mode: 0=disabled, 1=run, 2=step; other values are reserved."
+            },
+            {
+                "Bit Name": "start",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests one port transfer by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "fault",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-transfer fault. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-event flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky event-counter overflow. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Transfer-complete flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        },
+        {
+        "Register Name": "port_2",
+        "Offset": "0x0108",
+        "Repeat Mode": "FIXED",
+        "Count or Default": "3",
+        "Offset Stride": "4",
+        "Maximum Count": "3",
+        "Reset Value": "0x0",
+        "Descriprtion": "Per-port transfer control and event status. Expands to port_0 through port_2 at four-byte intervals.",
+        "Bits": [
+            {
+                "Bit Name": "event_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of completed transfers on this port; supplied by hardware."
+            },
+            {
+                "Bit Name": "mode",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Select port mode: 0=disabled, 1=run, 2=step; other values are reserved."
+            },
+            {
+                "Bit Name": "start",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests one port transfer by writing 1; hardware clears the request after acceptance. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "fault",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-transfer fault. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky port-event flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky event-counter overflow. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "done",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Transfer-complete flag. A completed CSR read returns its current value and then clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        },
+        {
+        "Register Name": "monitor",
+        "Offset": "0x0200",
+        "Repeat Mode": "PARAMETERIZED",
+        "Count or Default": "2",
+        "Offset Stride": "4",
+        "Maximum Count": "4",
+        "Reset Value": "0x0",
+        "Descriprtion": "Per-monitor capture control and event status. Default count is 2; the elaboration parameter allows 1 through 4 entries.",
+        "Bits": [
+            {
+                "Bit Name": "sample_count",
+                "Bit Type": "ro",
+                "Bit Field": "[31:24]",
+                "Reset Value": "0x0",
+                "Description": "Number of samples captured by this monitor entry; supplied by hardware."
+            },
+            {
+                "Bit Name": "threshold",
+                "Bit Type": "rw",
+                "Bit Field": "[23:20]",
+                "Reset Value": "0x0",
+                "Description": "Four-bit event-count threshold used by this monitor entry."
+            },
+            {
+                "Bit Name": "capture",
+                "Bit Type": "rwi",
+                "Bit Field": "[19]",
+                "Reset Value": "0x0",
+                "Description": "Software requests a sample by writing 1; hardware clears the request when capture completes. A simultaneous software write wins."
+            },
+            {
+                "Bit Name": "error",
+                "Bit Type": "w1c",
+                "Bit Field": "[18]",
+                "Reset Value": "0x0",
+                "Description": "Sticky capture-error flag. Hardware sets it; software writes 1 to clear it. A simultaneous hardware update wins."
+            },
+            {
+                "Bit Name": "pending",
+                "Bit Type": "w0c",
+                "Bit Field": "[17]",
+                "Reset Value": "0x0",
+                "Description": "Sticky trigger-pending flag. Software writes 0 to clear it; a write of 1 preserves it. Hardware update wins."
+            },
+            {
+                "Bit Name": "overflow",
+                "Bit Type": "w2c",
+                "Bit Field": "[16]",
+                "Reset Value": "0x0",
+                "Description": "Sticky lost-sample flag. Any software write to this register clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "match",
+                "Bit Type": "r2c",
+                "Bit Field": "[15]",
+                "Reset Value": "0x0",
+                "Description": "Threshold-match event. A completed CSR read returns its current value and then clears the field; hardware update wins."
+            },
+            {
+                "Bit Name": "reserved",
+                "Bit Type": "ro",
+                "Bit Field": "[14:0]",
+                "Reset Value": "0x0",
+                "Description": "Reserved; reads as zero and has no hardware input."
+            }
+          ]
+        }
+    ]
+}

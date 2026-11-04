@@ -1,11 +1,16 @@
 `timescale 1ps/1ps
-// Self-checking testbench of the CSR generated from CSR_GOLDEN_FORMAT.xlsx (sheet CSR or ASYNC_CSR).
-// DUT      : m_vlsi_csr with the elaboration parameters PARA_ASYNCHRONOUS and PARA_MONITOR_COUNT.
+// Self-checking testbench of the APB4 CSR golden map and optional event sideband.
+// DUT      : m_vlsi_csr, or m_vlsi_apb4_csr when CSR_EVENT_SIDEBAND is defined.
 // Registers: engine (0x000), port_0..port_2 (FIXED, 0x100, 0x104, 0x108), monitor bank (PARAMETERIZED,
 //            0x200 + 4 x index, MC entries). Every register has the field layout ro[31:24], rw[23:20],
 //            rwi[19], w1c[18], w0c[17], w2c[16], r2c[15], reserved[14:0].
 // Plan     : TEST-003 .. TEST-008, TEST-012, TEST-013, TEST-016 of the specification (section 15.2).
 // Result   : prints "TB PASS" or "TB FAIL" and a count of checks and of covered cases.
+`ifdef CSR_EVENT_SIDEBAND
+`define CSR_GOLDEN_DUT m_vlsi_apb4_csr
+`else
+`define CSR_GOLDEN_DUT m_vlsi_csr
+`endif
 module tb_csr_golden;
   parameter ASYNC  = 0;        // PARA_ASYNCHRONOUS
   parameter MC     = 2;        // PARA_MONITOR_COUNT (1 to 4)
@@ -30,6 +35,12 @@ module tb_csr_golden;
   wire       pready, pslverr;
   wire [31:0] prdata;
   reg        protect_en = 1, slverr_en = 1;
+`ifdef CSR_EVENT_SIDEBAND
+  wire       reg_rd_en, reg_wr_en;
+  wire [15:0] reg_rd_addr, reg_wr_addr;
+  integer    reg_rd_event_count = 0, reg_wr_event_count = 0, reg_event_bad_count = 0;
+  reg [15:0] reg_rd_event_addr = 0, reg_wr_event_addr = 0;
+`endif
 
   // Hardware side, flat vectors: instance i, field k (0 start, 1 fault, 2 pending, 3 overflow, 4 done).
   reg  [63:0] ro_flat   = 0;
@@ -65,7 +76,7 @@ module tb_csr_golden;
     assign mon_we4[j] = hw_we_flat[(4 + j) * 5 + 4];
   end endgenerate
 
-  m_vlsi_csr #(.PARA_ASYNCHRONOUS(ASYNC), .PARA_MONITOR_COUNT(MC)) u_dut (
+  `CSR_GOLDEN_DUT #(.PARA_ASYNCHRONOUS(ASYNC), .PARA_MONITOR_COUNT(MC)) u_dut (
     .i_clk_apb(clk_apb), .i_rst_n_apb(rst_n_apb), .i_clk_reg(clk_reg), .i_rst_n_reg(rst_n_reg),
     .i_apb_psel(psel), .i_apb_penable(penable), .i_apb_pwrite(pwrite), .i_apb_paddr(paddr),
     .i_apb_pwdata(pwdata), .i_apb_pstrb(pstrb), .i_apb_pprot(pprot),
@@ -101,7 +112,12 @@ module tb_csr_golden;
     .o_monitor_pending(mon_o2), .i_hw_wdata_monitor_pending(mon_wd2), .i_hw_we_monitor_pending(mon_we2),
     .o_monitor_overflow(mon_o3), .i_hw_wdata_monitor_overflow(mon_wd3), .i_hw_we_monitor_overflow(mon_we3),
     .o_monitor_match(mon_o4), .i_hw_wdata_monitor_match(mon_wd4), .i_hw_we_monitor_match(mon_we4)
+`ifdef CSR_EVENT_SIDEBAND
+    , .o_reg_rd_en(reg_rd_en), .o_reg_rd_addr(reg_rd_addr)
+    , .o_reg_wr_en(reg_wr_en), .o_reg_wr_addr(reg_wr_addr)
+`endif
   );
+`undef CSR_GOLDEN_DUT
 
   // ------------------------------------------------------------------------------------------
   // Checks, coverage, random numbers
@@ -192,6 +208,44 @@ module tb_csr_golden;
     end
   endtask
 
+`ifdef CSR_EVENT_SIDEBAND
+  task automatic t_event_sideband;
+    integer rd_before, wr_before;
+    begin
+      rd_before = reg_rd_event_count;
+      apb(1'b0, 16'h0000, 32'h0, 4'hF, 3'b000, 1'b0);
+      chk(reg_rd_event_count == rd_before + 1 && reg_rd_event_addr == 16'h0000,
+          "event sideband: mapped read reports event and address");
+
+      rd_before = reg_rd_event_count;
+      apb(1'b0, 16'h0004, 32'h0, 4'hF, 3'b000, 1'b0);
+      chk(reg_rd_event_count == rd_before + 1 && reg_rd_event_addr == 16'h0004,
+          "event sideband: aligned unmapped read reports event and address");
+
+      rd_before = reg_rd_event_count;
+      apb(1'b0, 16'h0001, 32'h0, 4'hF, 3'b000, 1'b0);
+      chk(last_err === 1'b1 && reg_rd_event_count == rd_before,
+          "event sideband: misaligned errored read is suppressed");
+
+      wr_before = reg_wr_event_count;
+      apb(1'b1, 16'h0000, 32'h0, 4'hF, 3'b000, 1'b0);
+      chk(reg_wr_event_count == wr_before + 1 && reg_wr_event_addr == 16'h0000,
+          "event sideband: mapped write reports event and address");
+
+      wr_before = reg_wr_event_count;
+      apb(1'b1, 16'h0004, 32'h0, 4'hF, 3'b000, 1'b0);
+      chk(reg_wr_event_count == wr_before,
+          "event sideband: unmapped write is suppressed");
+
+      wr_before = reg_wr_event_count;
+      apb(1'b1, 16'h0000, 32'h0, 4'h3, 3'b000, 1'b0);
+      chk(last_err === 1'b1 && reg_wr_event_count == wr_before,
+          "event sideband: errored partial write is suppressed");
+      chk(reg_event_bad_count == 0, "event sideband: pulse timing and address outputs are valid");
+    end
+  endtask
+`endif
+
   // ------------------------------------------------------------------------------------------
   // Reference model of the register fields (software side and hardware loads)
   // ------------------------------------------------------------------------------------------
@@ -209,6 +263,31 @@ module tb_csr_golden;
     end
   endfunction
 
+`ifdef CSR_EVENT_SIDEBAND
+  // Event outputs must coincide with an active, aligned APB transfer and carry its address.
+  // Read events may target unmapped addresses; write events must target a mapped register.
+  always @(posedge clk_apb) begin
+    if (rst_n_apb) begin
+      if (reg_rd_en) begin
+        reg_rd_event_count = reg_rd_event_count + 1;
+        reg_rd_event_addr = reg_rd_addr;
+        if (!psel || !penable || pwrite || (reg_rd_addr !== paddr) || (reg_rd_addr[1:0] != 2'b00))
+          reg_event_bad_count = reg_event_bad_count + 1;
+      end else if (reg_rd_addr !== 16'h0000) begin
+        reg_event_bad_count = reg_event_bad_count + 1;
+      end
+      if (reg_wr_en) begin
+        reg_wr_event_count = reg_wr_event_count + 1;
+        reg_wr_event_addr = reg_wr_addr;
+        if (!psel || !penable || !pwrite || (reg_wr_addr !== paddr) || (lookup(paddr) < 0))
+          reg_event_bad_count = reg_event_bad_count + 1;
+      end else if (reg_wr_addr !== 16'h0000) begin
+        reg_event_bad_count = reg_event_bad_count + 1;
+      end
+    end
+  end
+`endif
+
   function automatic [15:0] iaddr(input integer i);
     begin
       if (i == 0) iaddr = 16'h0000;
@@ -223,13 +302,15 @@ module tb_csr_golden;
     end
   endfunction
 
-  task automatic m_write(input integer i, input [31:0] d);
+  task automatic m_write(input integer i, input [31:0] d, input [3:0] s);
     begin
-      m_mode[i] = d[23:20];
-      m_f[i][0] = d[19];
-      m_f[i][1] = m_f[i][1] & ~d[18];
-      m_f[i][2] = m_f[i][2] & d[17];
-      m_f[i][3] = 1'b0;
+      if (s[2]) begin
+        m_mode[i] = d[23:20];
+        m_f[i][0] = d[19];
+        m_f[i][1] = m_f[i][1] & ~d[18];
+        m_f[i][2] = m_f[i][2] & d[17];
+        m_f[i][3] = 1'b0;
+      end
     end
   endtask
 
@@ -237,8 +318,11 @@ module tb_csr_golden;
     integer i;
     begin
       for (i = 0; i < NI; i = i + 1) begin
-        chk(o_mode_flat[i * 4 +: 4] === m_mode[i], tag);
-        chk(o_f_flat[i * 5 +: 5] === m_f[i], tag);
+        chk(o_mode_flat[i * 4 +: 4] === m_mode[i],
+            $sformatf("%s: mode[%0d] expected=%h actual=%h addr=%h write=%b data=%h strb=%h prot=%h err=%b cycles=%0d",
+                      tag, i, m_mode[i], o_mode_flat[i * 4 +: 4], paddr, pwrite, pwdata, pstrb, pprot, last_err, last_cycles));
+        chk(o_f_flat[i * 5 +: 5] === m_f[i],
+            $sformatf("%s: flags[%0d] expected=%b actual=%b", tag, i, m_f[i], o_f_flat[i * 5 +: 5]));
       end
     end
   endtask
@@ -289,7 +373,7 @@ module tb_csr_golden;
     begin
       apb(1'b1, iaddr(i), d, 4'hF, 3'b000, 1'b0);
       chk(last_err === 1'b0, "write without error");
-      m_write(i, d);
+      m_write(i, d, 4'hF);
     end
   endtask
 
@@ -410,7 +494,7 @@ module tb_csr_golden;
       apb(1'b1, iaddr(a), d, 4'hF, 3'b000, 1'b0);
       chk(arm_wr === 1'b0, "collision armed and fired");
       chk(last_err === 1'b0, "collision write without error");
-      m_write(a, d);
+      m_write(a, d, 4'hF);
     end
   endtask
 
@@ -530,7 +614,7 @@ module tb_csr_golden;
         cov_err = cov_err + 1;
       end else begin
         chk(last_err === 1'b0, "slverr off: partial strobe gives no error");
-        m_write(0, 32'h00A0_0000);
+        m_write(0, 32'h00A0_0000, 4'hE);
         chk(o_mode_flat[3:0] === 4'hA, "slverr off: the whole word is stored");
       end
       // misaligned address
@@ -553,13 +637,13 @@ module tb_csr_golden;
         cov_err = cov_err + 1;
       end else begin
         chk(last_err === 1'b0, "PPROT[1] without protect_en or slverr_en: no error");
-        m_write(0, 32'h00C0_0000);
+        m_write(0, 32'h00C0_0000, 4'hF);
         chk(o_mode_flat[3:0] === 4'hC, "PPROT[1] ignored: write stored");
       end
       // other PPROT bits never cause an error
       apb(1'b1, 16'h0000, 32'h00D0_0000, 4'hF, 3'b101, 1'b0);
       chk(last_err === 1'b0, "PPROT[2] and PPROT[0] never cause an error");
-      m_write(0, 32'h00D0_0000);
+      m_write(0, 32'h00D0_0000, 4'hF);
       // a read that follows an error returns the value of the last good read, then the new value
       apb(1'b0, 16'h0000, 32'h0, 4'hF, 3'b000, 1'b0);
       chk(last_err === 1'b0 && last_rdata === predict(0), "read after the error responses");
@@ -574,7 +658,7 @@ module tb_csr_golden;
     begin
       for (a = 0; a < 6; a = a + 1) begin
         apb(a[0], 16'h0000, 32'h0010_0000 + a, 4'hF, 3'b000, 1'b0);
-        if (a[0]) m_write(0, 32'h0010_0000 + a);
+        if (a[0]) m_write(0, 32'h0010_0000 + a, 4'hF);
         if (ASYNC == 0) chk(last_cycles == 3, "CFG-SYNC: PREADY in the third cycle (one wait state)");
         else            chk(last_cycles >= 3, "CFG-ASYNC: PREADY after at least one wait state");
         if (a[0]) begin
@@ -585,7 +669,7 @@ module tb_csr_golden;
       end
       // back-to-back transfers: the next SETUP starts in the cycle after PREADY
       apb(1'b1, 16'h0000, 32'h0030_0000, 4'hF, 3'b000, 1'b1);
-      m_write(0, 32'h0030_0000);
+      m_write(0, 32'h0030_0000, 4'hF);
       chk(last_err === 1'b0, "back-to-back: first transfer");
       apb(1'b0, 16'h0000, 32'h0, 4'hF, 3'b000, 1'b0);
       chk(last_rdata === predict(0), "back-to-back: second transfer reads the first write");
@@ -594,7 +678,7 @@ module tb_csr_golden;
       // PRDATA keeps the last good read data across a write
       good_rdata = last_rdata;
       apb(1'b1, 16'h0000, 32'h0040_0000, 4'hF, 3'b000, 1'b0);
-      m_write(0, 32'h0040_0000);
+      m_write(0, 32'h0040_0000, 4'hF);
       chk(prdata === good_rdata, "PRDATA holds the last read data across a write");
     end
   endtask
@@ -670,7 +754,9 @@ module tb_csr_golden;
           chk(last_err === 1'b0, "random: no error response");
           if (wr) begin
             cov_ok_wr = cov_ok_wr + 1;
-            if (a >= 0) m_write(a, d);
+            if (a >= 0) begin
+              m_write(a, d, st);
+            end
           end else begin
             cov_ok_rd = cov_ok_rd + 1;
             if (a >= 0) begin
@@ -690,24 +776,51 @@ module tb_csr_golden;
   // ------------------------------------------------------------------------------------------
   // Main sequence
   // ------------------------------------------------------------------------------------------
+  integer test_phase = 0;
+
+  // Keep each timing process small to avoid an oversized coroutine for the
+  // complete directed and randomized regression.
   initial begin
     model_reset;
-    // Phase A: protect_en = 1, slverr_en = 1
     do_reset(1'b1, 1'b1);
+`ifdef CSR_EVENT_SIDEBAND
+    t_event_sideband;
+    do_reset(1'b1, 1'b1);
+`endif
     t_reset_values;
     t_fields;
+    test_phase = 1;
+  end
+
+  initial begin
+    wait (test_phase == 1);
     do_reset(1'b1, 1'b1);
     t_hw_and_sw_clear;
     do_reset(1'b1, 1'b1);
     t_collisions;
+    test_phase = 2;
+  end
+
+  initial begin
+    wait (test_phase == 2);
     do_reset(1'b1, 1'b1);
     t_independence;
     do_reset(1'b1, 1'b1);
     t_errors(1'b1, 1'b1);
+    test_phase = 3;
+  end
+
+  initial begin
+    wait (test_phase == 3);
     do_reset(1'b1, 1'b1);
     t_timing;
     do_reset(1'b1, 1'b1);
     t_reset_mid;
+    test_phase = 4;
+  end
+
+  initial begin
+    wait (test_phase == 4);
     do_reset(1'b1, 1'b1);
     t_random(RANDN, 1'b1, 1'b1);
     // Phase B: protect_en = 0, slverr_en = 1
@@ -724,6 +837,11 @@ module tb_csr_golden;
     chk(cov_rwi_sw > 0 && cov_w1c_hw > 0 && cov_w0c_hw > 0 && cov_w2c_hw > 0 && cov_r2c_hw > 0, "collision cases covered");
     chk(cov_sva1 > 0 && cov_sva4 > 0, "assertion monitors hit");
     chk(cov_err > 0 && cov_ok_wr > 0 && cov_ok_rd > 0 && cov_unmapped > 0 && cov_b2b > 0 && cov_rst_mid > 0, "access cases covered");
+`ifdef CSR_EVENT_SIDEBAND
+    chk(reg_rd_event_count > 0 && reg_wr_event_count > 0 && reg_event_bad_count == 0,
+        "event sideband: read/write events covered without timing or address errors");
+    $display("COVER register_events read=%0d write=%0d bad=%0d", reg_rd_event_count, reg_wr_event_count, reg_event_bad_count);
+`endif
     $display("COVER rwi_sw=%0d w1c_hw=%0d w0c_hw=%0d w2c_hw=%0d r2c_hw=%0d hw0=%0d clr(w1c,w0c,w2c,r2c)=%0d,%0d,%0d,%0d",
              cov_rwi_sw, cov_w1c_hw, cov_w0c_hw, cov_w2c_hw, cov_r2c_hw, cov_hw_zero,
              cov_w1c_clear, cov_w0c_clear, cov_w2c_clear, cov_r2c_clear);

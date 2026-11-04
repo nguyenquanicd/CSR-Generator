@@ -906,7 +906,7 @@ def flow_verify():
     g = Flow("F5", "F5  Regression flow of run_golden_test.py", col_w=300)
     g.node("st", "term", "Start: run_golden_test.py [--mutants] [--quick]", 0, 0, w=320)
     g.node("g1", "proc", "Generate sheets CSR and ASYNC_CSR\ninto a temporary folder", 0, 1.2, w=310)
-    g.node("c1", "proc", "Compare with RTL/m_vlsi_csr.sv (Date ignored);\ncheck both sheets give the same source", 0, 2.6, w=340)
+    g.node("c1", "proc", "Compare with examples/APB4_Synchronous/RTL/m_vlsi_apb4_csr.sv;\nnormalize module name and ignore Date", 0, 2.6, w=340)
     g.node("lp", "proc", "For each configuration (ASYNC, monitors, clock ratio):\ncompile with iverilog and tb_csr_golden.sv", 0, 4.1, w=360)
     g.node("rn", "proc", "Run vvp; read the TB PASS / TB FAIL line", 0, 5.5, w=320)
     g.node("d1", "dec", "More\nconfigurations?", 0, 6.8, w=210)

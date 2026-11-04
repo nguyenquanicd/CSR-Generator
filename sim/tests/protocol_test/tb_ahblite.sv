@@ -1,0 +1,165 @@
+`timescale 1ns/1ps
+
+module tb_ahblite #(
+  parameter logic [31:0] TEST_ENDIAN = 32'd0,
+  parameter logic [31:0] TEST_ASYNC = 32'd0
+);
+  logic i_clk_ahb;
+  logic i_clk_reg;
+  logic i_rst_n_ahb;
+  logic i_rst_n_reg;
+  logic i_ahb_hsel;
+  logic i_ahb_hready;
+  logic [1:0] i_ahb_htrans;
+  logic [15:0] i_ahb_haddr;
+  logic i_ahb_hwrite;
+  logic [2:0] i_ahb_hsize;
+  logic [2:0] i_ahb_hburst;
+  logic [31:0] i_ahb_hwdata;
+  wire o_ahb_hreadyout;
+  wire o_ahb_hresp;
+  wire [31:0] o_ahb_hrdata;
+  wire [31:0] o_data_value;
+  integer test_count;
+
+  initial begin
+    i_clk_ahb = 1'b0;
+    forever #5 i_clk_ahb = ~i_clk_ahb;
+  end
+  initial begin
+    i_clk_reg = 1'b0;
+    forever #7 i_clk_reg = ~i_clk_reg;
+  end
+
+  m_vlsi_ahb_sim_csr #(
+    .PARA_ASYNCHRONOUS(TEST_ASYNC),
+    .PARA_AHB_ENDIAN(TEST_ENDIAN),
+    .PARA_WRITE_STROBE_MODE(32'd0)
+  ) u_dut (
+    .i_clk_ahb(i_clk_ahb), .i_rst_n_ahb(i_rst_n_ahb),
+    .i_clk_reg(i_clk_reg), .i_rst_n_reg(i_rst_n_reg),
+    .i_ahb_hsel(i_ahb_hsel), .i_ahb_hready(i_ahb_hready), .i_ahb_htrans(i_ahb_htrans),
+    .i_ahb_haddr(i_ahb_haddr), .i_ahb_hwrite(i_ahb_hwrite), .i_ahb_hsize(i_ahb_hsize),
+    .i_ahb_hburst(i_ahb_hburst), .i_ahb_hwdata(i_ahb_hwdata),
+    .o_ahb_hreadyout(o_ahb_hreadyout), .o_ahb_hresp(o_ahb_hresp),
+    .o_ahb_hrdata(o_ahb_hrdata), .o_data_value(o_data_value)
+  );
+
+  task automatic ahb_access(input logic [15:0] address,
+                            input logic write_access,
+                            input logic [2:0] size,
+                            input logic [31:0] write_data,
+                            input logic expected_error,
+                            input logic [31:0] expected_read);
+    integer cycles;
+    integer error_cycles;
+    logic done;
+    begin
+      @(negedge i_clk_ahb);
+      i_ahb_hsel = 1'b1;
+      i_ahb_htrans = 2'b10;
+      i_ahb_haddr = address;
+      i_ahb_hwrite = write_access;
+      i_ahb_hsize = size;
+      i_ahb_hburst = 3'b000;
+      @(posedge i_clk_ahb);
+      @(negedge i_clk_ahb);
+      i_ahb_hsel = 1'b0;
+      i_ahb_htrans = 2'b00;
+      i_ahb_hwdata = write_data;
+      cycles = 0;
+      error_cycles = 0;
+      done = 1'b0;
+      while ((cycles < 120) && ~done) begin
+        @(negedge i_clk_ahb);
+        cycles = cycles + 1;
+        if (o_ahb_hresp)
+          error_cycles = error_cycles + 1;
+        if (o_ahb_hreadyout) begin
+          if (o_ahb_hresp !== expected_error)
+            $fatal(1, "AHB response mismatch at %04x: HRESP=%0b expected=%0b", address, o_ahb_hresp, expected_error);
+          if (expected_error && error_cycles != 2)
+            $fatal(1, "AHB ERROR response lasted %0d cycles, expected 2", error_cycles);
+          if (!expected_error && !write_access && o_ahb_hrdata !== expected_read)
+            $fatal(1, "AHB HRDATA got %08x expected %08x at %04x", o_ahb_hrdata, expected_read, address);
+          @(posedge i_clk_ahb);
+          done = 1'b1;
+        end
+      end
+      if (!done) $fatal(1, "AHB response timeout at %04x", address);
+      @(negedge i_clk_ahb);
+      i_ahb_hwdata = '0;
+    end
+  endtask
+
+  initial begin
+    i_rst_n_ahb = 1'b0;
+    i_rst_n_reg = 1'b0;
+    i_ahb_hsel = 1'b0;
+    i_ahb_hready = 1'b1;
+    i_ahb_htrans = 2'b00;
+    i_ahb_haddr = '0;
+    i_ahb_hwrite = 1'b0;
+    i_ahb_hsize = 3'd2;
+    i_ahb_hburst = 3'b000;
+    i_ahb_hwdata = '0;
+    test_count = 0;
+    repeat (5) @(negedge i_clk_ahb);
+    i_rst_n_ahb = 1'b1;
+    repeat (2) @(negedge i_clk_reg);
+    i_rst_n_reg = 1'b1;
+    repeat (10) @(posedge i_clk_ahb);
+
+    if (o_data_value !== 32'h12345678) $fatal(1, "CSR reset value mismatch");
+    test_count = test_count + 1;
+    $display("PASS AHB case: reset and selected FIFO clock-mode initialization");
+
+    if (TEST_ENDIAN == 32'd0) begin
+      ahb_access(16'h0000, 1'b1, 3'd2, 32'h11223344, 1'b0, '0);
+      if (o_data_value !== 32'h11223344) $fatal(1, "AHB word write failed");
+      ahb_access(16'h0001, 1'b1, 3'd0, 32'h0000AA00, 1'b0, '0);
+      if (o_data_value !== 32'h1122AA44) $fatal(1, "AHB byte lane write failed: %08x", o_data_value);
+      ahb_access(16'h0002, 1'b1, 3'd1, 32'hBEEF0000, 1'b0, '0);
+      if (o_data_value !== 32'hBEEFAA44) $fatal(1, "AHB halfword lane write failed: %08x", o_data_value);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'hBEEFAA44);
+      test_count = test_count + 1;
+      $display("PASS AHB case: LITTLE word, byte, halfword writes and readback");
+    end else if (TEST_ENDIAN == 32'd1) begin
+      ahb_access(16'h0000, 1'b1, 3'd2, 32'h44332211, 1'b0, '0);
+      if (o_data_value !== 32'h11223344) $fatal(1, "AHB BE8 word mapping failed: %08x", o_data_value);
+      ahb_access(16'h0000, 1'b1, 3'd0, 32'h000000AA, 1'b0, '0);
+      if (o_data_value !== 32'hAA223344) $fatal(1, "AHB BE8 byte mapping failed: %08x", o_data_value);
+      ahb_access(16'h0000, 1'b1, 3'd1, 32'h0000BBAA, 1'b0, '0);
+      if (o_data_value !== 32'hAABB3344) $fatal(1, "AHB BE8 halfword mapping failed: %08x", o_data_value);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h4433BBAA);
+      test_count = test_count + 1;
+      $display("PASS AHB case: BE8 byte-invariant lane mapping");
+    end else begin
+      ahb_access(16'h0000, 1'b1, 3'd2, 32'h11223344, 1'b0, '0);
+      if (o_data_value !== 32'h11223344) $fatal(1, "AHB BE32 word mapping failed");
+      ahb_access(16'h0000, 1'b1, 3'd0, 32'hAA000000, 1'b0, '0);
+      if (o_data_value !== 32'hAA223344) $fatal(1, "AHB BE32 byte mapping failed: %08x", o_data_value);
+      ahb_access(16'h0000, 1'b1, 3'd1, 32'hBEEF0000, 1'b0, '0);
+      if (o_data_value !== 32'hBEEF3344) $fatal(1, "AHB BE32 halfword mapping failed: %08x", o_data_value);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'hBEEF3344);
+      test_count = test_count + 1;
+      $display("PASS AHB case: BE32 word-invariant lane mapping");
+    end
+
+    ahb_access(16'h0000, 1'b1, 3'd3, 32'hFFFFFFFF, 1'b1, '0);
+    ahb_access(16'h0001, 1'b1, 3'd1, 32'hFFFFFFFF, 1'b1, '0);
+    test_count = test_count + 1;
+    $display("PASS AHB case: unsupported size and misaligned halfword return two-cycle ERROR");
+
+    ahb_access(16'h0004, 1'b0, 3'd2, '0, 1'b1, '0);
+    test_count = test_count + 1;
+    $display("PASS AHB case: unmapped address returns two-cycle ERROR");
+    $display("PASS AHB: endian=%0d asynchronous=%0d, cases=%0d", TEST_ENDIAN, TEST_ASYNC, test_count);
+    $finish;
+  end
+
+  initial begin
+    #100000;
+    $fatal(1, "AHB testbench timeout");
+  end
+endmodule

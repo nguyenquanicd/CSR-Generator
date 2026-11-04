@@ -3,12 +3,13 @@
 #------------------------------------------------------------------------------
 
 # The paths of filelist.f are relative to the folder of that file.
-cd $::env(CSR_GEN_HOME)/RTL
+set EXAMPLE_DIR $::env(CSR_GEN_HOME)/examples/APB4_Synchronous
+cd $EXAMPLE_DIR/RTL
 
 # Project inputs
-set FILELIST   $::env(CSR_GEN_HOME)/RTL/filelist.f
+set FILELIST   $EXAMPLE_DIR/RTL/filelist.f
 set DEFINES    ""
-set TOP_DESIGN m_vlsi_csr
+set TOP_DESIGN m_vlsi_apb4_csr
 
 # Lint setup
 set enable_lint true

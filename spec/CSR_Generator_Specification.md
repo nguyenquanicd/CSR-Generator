@@ -2,10 +2,10 @@
 
 | Item | Value |
 |---|---|
-| Document | Specification of APB-CSR-Generator: script flow, option reference with logic schematics, user guide, normative design specification, planned extensions |
-| Product | `CSR_Generation.py`, a generator of APB4 CSR modules from an Excel register map |
-| Generator version described | 2.4 (Parts A, B); 3.x proposal (Part C, not implemented) |
-| Document date | 2026-11-02 |
+| Document | Specification of APB-CSR-Generator: script flow, workbook reference, user guide, normative design specification, implementation history |
+| Product | `CSR_Generation.py`, a generator of APB4, AXI4-Lite, or AHB-Lite CSR modules from an Excel register map |
+| Generator version described | 3.0 current protocol implementation; Parts A/B retain the APB4 2.4 baseline; C.1–C.19 are unimplemented attribute proposals |
+| Document date | 2026-11-04 |
 | Language | English; Vietnamese summaries and appendices where marked |
 | Replaces | `README.md` (technical content), `APB_CSR_Generator_Design_Specification.md`, `Repeated_Register_Generation_Specification.md`, `CSR_Attribute_Extension_Specification.md` |
 
@@ -18,7 +18,7 @@
   - [A.4 Workbook reference](#a4-workbook-reference)
   - [A.5 Option reference](#a5-option-reference)
   - [A.6 User guide](#a6-user-guide)
-- [Part B. Normative design specification of generator 2.4](#part-b-normative-design-specification-of-generator-24)
+- [Part B. Normative design specification of the APB4 baseline (2.4)](#part-b-normative-design-specification-of-generator-24)
   - [B.1 Purpose, scope, and product context](#b1-purpose-scope-and-product-context)
   - [B.2 Normative references and precedence](#b2-normative-references-and-precedence)
   - [B.3 Requirements and traceability](#b3-requirements-and-traceability)
@@ -42,7 +42,7 @@
   - [B.21 Glossary](#b21-glossary)
   - [B.22 References used to shape this template](#b22-references-used-to-shape-this-template)
   - [B.23 Repeated register generation](#b23-repeated-register-generation)
-- [Part C. Planned extensions (generator 3.x)](#part-c-planned-extensions-generator-3x)
+- [Part C. Extension research and implemented multi-protocol support (3.0)](#part-c-extension-research-and-implemented-multi-protocol-support-generator-30)
   - [C.0 Tóm tắt bằng tiếng Việt](#c0-tóm-tắt-bằng-tiếng-việt)
   - [C.1 Purpose and scope](#c1-purpose-and-scope)
   - [C.2 Research summary](#c2-research-summary)
@@ -63,6 +63,7 @@
   - [C.17 References](#c17-references)
   - [C.18 Appendix: giải thích chi tiết từng đề xuất (tiếng Việt)](#c18-appendix-giải-thích-chi-tiết-từng-đề-xuất-tiếng-việt)
   - [C.19 Logic diagrams of the planned options](#c19-logic-diagrams-of-the-planned-options)
+  - [C.20 Implemented multi-protocol CSR interface generation](#c20-multi-protocol-csr-interface-generation)
 - [Part D. Appendices](#part-d-appendices)
   - [D.1 Revision history](#d1-revision-history)
   - [D.2 Figure index](#d2-figure-index)
@@ -75,11 +76,11 @@
 
 #### A.1.1 Purpose
 
-APB-CSR-Generator is a Python script, `CSR_Generation.py`, that reads a register map from an Excel workbook and writes one synthesizable SystemVerilog module: an AMBA APB4 completer with the registers and fields of the workbook. The module lets software control and observe a hardware block through memory-mapped registers.
+APB-CSR-Generator is a Python tool that reads a register map from an Excel workbook and writes one synthesizable SystemVerilog CSR module. A sheet selects APB4, AXI4-Lite, or AHB-Lite; each generated module contains only that bus interface and the workbook's registers and fields.
 
 | Input | Output |
 |---|---|
-| Workbook sheet with a configuration table and a register-definition table | `RTL/<module>.sv`, `RTL/filelist.f`, `RTL/models/m_csr_sync.sv`, `Debug/debug.json` |
+| Workbook sheet with a configuration table and a register-definition table | `RTL/<module>.sv`, `RTL/filelist.f`, behavioral models under `RTL/models/`, `Debug/debug.json` |
 
 This document is the single specification of the generator. It replaces the former `README.md`, `APB_CSR_Generator_Design_Specification.md`, `Repeated_Register_Generation_Specification.md` and `CSR_Attribute_Extension_Specification.md`.
 
@@ -87,21 +88,22 @@ This document is the single specification of the generator. It replaces the form
 
 | Part | Content | Reader |
 |---|---|---|
-| A | Overview, script flow with flowcharts, every option with its logic diagram, user guide | Everyone; start with A.6 if you only want to use the tool |
-| B | Normative design specification of generator 2.4: requirements, interfaces, clocking, behavior, errors, verification, decisions | Designers, verifiers, reviewers |
-| C | Planned extensions (generator 3.x): research, proposed attributes, decisions, requirements, roadmap | Planners; nothing in Part C is implemented |
+| A | Overview, script flow, workbook and option reference, user guide | Everyone; start with A.6 to use the tool |
+| B | Normative design specification of the APB4 2.4 baseline | APB4 users and maintainers |
+| C.1–C.19 | Historical register-attribute research and proposals; not implemented | Future planning only |
+| C.20 | Normative specification of implemented generator 3.0 AXI4-Lite/AHB-Lite support | AXI4-Lite/AHB-Lite users and maintainers |
 | D | Revision history, figure index, repository layout | Maintainers |
 
-Status legend used in Part A: **[implemented]** the option exists in generator 2.4; **[planned]** the option is only in Part C.
+Status legend used in Part A: **[implemented]** the behavior exists in the current source; **[proposal]** the item remains unimplemented and is explicitly labeled as such.
 
 #### A.1.3 Version and status
 
 | Item | Value |
 |---|---|
-| Generator version | 2.4 (`VERSION` in `CSR_Generation.py`) |
+| Generator version | 3.0 (`VERSION` in `CSR_Generation.py`) |
 | RTL rule baseline | VLSIT RTL Design Rule v2 (naming, port layout, header, process labels) |
-| Verified with | simulation of nine configurations with iverilog, ten fault mutants, Verilator 5 `-Wall`, slang, `vlsit_rtl_check.py` (Section B.15.5) |
-| Not done | CDC and RDC tool analysis, synthesis, formal equivalence with earlier versions |
+| Verification | Generator regression and AXI4-Lite/AHB-Lite protocol simulation results are recorded in C.20.7; APB4 2.4 evidence remains in B.15.5 |
+| Not done | CDC/RDC signoff, synthesis/area characterization, formal equivalence across versions |
 
 #### A.1.4 Reading the schematics
 
@@ -111,7 +113,7 @@ The figures of this part are gate-level schematics. Their cells are named after 
 - A flip-flop `DFF_RN` is clocked on the rising edge and cleared by an asynchronous active-low reset; `DFF_SN` is set by it. A short blue stub marks the clock pin and a short red stub marks the reset pin; the stub label names the signal.
 - A label in the form `w_*` is a combinational signal, `reg_*` a flop output, `i_*`/`o_*` a port of the generated module.
 - Text boxes (`BOX`) stand for a block that is a tree of the basic cells and is not drawn in full (for example a 16-bit comparator).
-- The figures are produced by `spec/figures/tools/make_figures.py`; the drawn logic follows the templates of `CSR_Generation.py` and the generated `RTL/m_vlsi_csr.sv`.
+- The figures are produced by `spec/figures/tools/make_figures.py`; the drawn logic follows the templates of `CSR_Generation.py` and the APB4 reference RTL in `examples/APB4_Synchronous/RTL/m_vlsi_apb4_csr.sv`.
 
 ### A.2 Overview and architecture
 
@@ -119,14 +121,16 @@ The figures of this part are gate-level schematics. Their cells are named after 
 
 | Feature | Description |
 |---|---|
-| APB4 completer | SETUP and ACCESS phases, `PREADY`, `PSLVERR`, `PPROT`, `PSTRB`, one transfer at a time |
+| Selectable CSR bus | One generated interface per sheet: APB4, AXI4-Lite, or AHB-Lite |
 | Field types | `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`, and `reserved` bits |
 | Hardware interface | Output per field; input per `ro` field; load enable and load data for `rwi`, `w1c`, `w0c`, `w2c`, `r2c` |
 | Register replication | `NONE`, `FIXED` (N named copies), `PARAMETERIZED` (one bank with an elaboration count) |
-| Clock architecture | One module, parameter `PARA_ASYNCHRONOUS`: 0 = APB clock for the registers, 1 = separate register clock with request/acknowledge crossing |
-| Access checks | Static inputs `i_protect_en` and `i_slverr_en`; checks of `PPROT[1]`, word alignment, full write strobe |
+| Clock architecture | `PARA_ASYNCHRONOUS=0` uses the selected bus clock; `1` uses the separate register clock and protocol request/response FIFOs |
+| APB4 | SETUP/ACCESS phases, `PREADY`, `PSLVERR`, `PPROT`, `PSTRB`, and legacy access-check inputs |
+| AXI4-Lite | Independent AW/W capture, configurable outstanding policy, byte strobes, held B/R responses |
+| AHB-Lite | 32-bit bus, per-beat CSR accesses, subword lane mapping and two-cycle ERROR response |
 | Reset | Asynchronous assertion, one reset value per field |
-| Outputs | RTL, file list, synchronizer model, JSON dump of what was read |
+| Outputs | RTL, file list, synchronizer/FIFO models, JSON dump of what was read |
 | Rule compliance | Output follows the VLSIT RTL Design Rule v2 |
 
 #### A.2.2 Architecture
@@ -268,7 +272,7 @@ Rule NAM-07 limits port names to 30 characters. The longest generated forms are 
 
 ### A.5 Option reference
 
-Every option of generator 2.4 is described with the same items: purpose, workbook syntax, generated RTL, behavior, logic diagram, limits.
+The option diagrams in this section document the APB4/register-field baseline from generator 2.4. Current AXI4-Lite and AHB-Lite bus options are specified in C.20.
 
 #### A.5.1 Command-line options [implemented]
 
@@ -503,7 +507,7 @@ In CFG-ASYNC the value is first captured on the register clock at the read enabl
 
 #### A.5.11 Planned options [planned]
 
-The next generation of options (new field types, per-bit hardware set and clear, software access pulses, locks, access levels, strobe honoring, interrupt groups, counters, aliases, external windows, C header and UVM model output, checks) is specified in Part C with its logic diagrams in Section C.19. None of it exists in generator 2.4.
+The historical proposals in C.1–C.19 cover new field types, per-bit hardware set/clear, access pulses, locks, access levels, interrupt groups, counters, aliases, external windows, C header/UVM output and checks. Those proposals remain unimplemented. Protocol-specific strobe handling and AXI4-Lite/AHB-Lite generation are implemented and specified in C.20.
 
 ### A.6 User guide
 
@@ -622,7 +626,7 @@ python sim/tests/generator_test/run_generator_test.py      # tests of the tool i
 
 ![F5 regression flow](figures/flow/F5_regression_flow.svg)
 
-`run_golden_test.py` regenerates sheets `CSR` and `ASYNC_CSR` of `CSR_GOLDEN_FORMAT.xlsx`, compares the module with `RTL/m_vlsi_csr.sv`, simulates the module with `tb_csr_golden.sv` for both clock architectures, one to four monitor entries and six clock ratios, and with `--mutants` requires that ten injected faults are detected. To test your own map, run the generator on your sheet and adapt the testbench (its reference model is register-by-register).
+`run_golden_test.py` regenerates sheets `CSR` and `ASYNC_CSR` of `CSR_GOLDEN_FORMAT.xlsx`, compares the generated module with `examples/APB4_Synchronous/RTL/m_vlsi_apb4_csr.sv` after normalizing the module name, simulates the module with `tb_csr_golden.sv` for both clock architectures, one to four monitor entries and multiple clock ratios, and with `--mutants` requires that ten injected faults are detected. To test your own map, run the generator on your sheet and adapt the testbench (its reference model is register-by-register).
 
 #### A.6.8 Regenerate and maintain
 
@@ -639,7 +643,7 @@ python sim/tests/generator_test/run_generator_test.py      # tests of the tool i
 | `Asynchronous must be 0 or 1` | Wrong value | Use 0 or 1 |
 | `Address Width must be between 1 and 32 bits` | Wrong value | Correct it |
 | `Data Width must be a byte multiple from 8 through 32 bits` | Wrong value | Use 8, 16, 24 or 32 |
-| `protocol <x> is not implemented` | `Protocol` is not `APB` | Use `APB` |
+| `Protocol must be APB4, AXI4-Lite, or AHB-Lite` | `Protocol` value is unsupported | Select one of the supported protocol values in C.20.2 |
 | `<label> must be a valid SystemVerilog identifier` | Register or module name with illegal characters | Rename |
 | `unsupported bit type '<x>'; supported types: ...` | `BIT TYPE` outside the seven | Use one of `rw ro rwi w1c w0c w2c r2c` |
 | `register <r> contains a field without a name or bit range` | Incomplete field row | Fill column C and D |
@@ -677,7 +681,7 @@ Symptoms without a message:
 
 **How do I get a command bit that clears itself?** Use `rwi`: software writes 1; hardware loads 0 through `i_hw_we_*`/`i_hw_wdata_*` when the command is accepted.
 
-**How do I count events in a register?** The generator has no counter field type. Count in your logic and present the value as an `ro` field (Part C plans counters).
+**How do I count events in a register?** The generator has no counter field type. Count in your logic and present the value as an `ro` field; counters remain a proposal in C.1–C.19.
 
 **Why is there a second clock input in a synchronous design?** The port list is fixed so that the same module serves both modes; tie `i_clk_reg` and `i_rst_n_reg` to the APB clock and reset when `PARA_ASYNCHRONOUS` = 0.
 
@@ -685,9 +689,9 @@ Symptoms without a message:
 
 #### A.6.11 Limitations
 
-- Protocol: APB only; no APB5 signals (`PWAKEUP`, user signals, parity).
+- APB4 does not add APB5 signals (`PWAKEUP`, user signals, parity). AXI4-Lite/AHB-Lite profiles and limits are in C.20.
 - One transfer at a time; no pipelining.
-- Partial-strobe writes are rejected (`i_slverr_en` = 1) or stored as whole words (0); byte-lane writes are not performed (planned in Part C as `HONOR`).
+- APB4 uses `i_slverr_en`: when enabled, a partial write returns `PSLVERR`; when disabled, `PSTRB` selects the byte lanes that update. AXI4-Lite/AHB-Lite use the `Strobe Mode` configuration in C.20.
 - Only `PPROT[1]` is checked, and only with `i_protect_en` = 1 and `i_slverr_en` = 1.
 - Field overlaps and name lengths are not checked by the generator.
 - No CDC tool or synthesis result exists for the module (Section B.15.5).
@@ -724,7 +728,7 @@ The APB CSR Generator removes the hand-written register block from an ASIC IP. A
 
 This document specifies two things: the tool (Section B.10.2, tool operations TOOL-001 to TOOL-004) and the module that the tool generates (Sections B.6 to B.12). The module has no register map of its own; the map comes from the workbook, so Section B.11 states the rules of the programming model and no table of registers.
 
-**Included:** the command line and workbook reader of `CSR_Generation.py`; one generated RTL module with parameter-selected synchronous and asynchronous clock paths; the field types `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, and `r2c`; `NONE`, `FIXED`, and `PARAMETERIZED` repeated-register modes; the APB4 Completer behavior including error responses; the placeholder synchronizer model `m_csr_sync`; the generated `filelist.f` and per-run `Debug/debug.json`; and the checked-in golden outputs `RTL/m_vlsi_csr.sv`, `RTL/models/m_csr_sync.sv`, `RTL/filelist.f`, and `Debug/debug.json`.
+**Included:** the command line and workbook reader of `CSR_Generation.py`; one generated RTL module with parameter-selected synchronous and asynchronous clock paths; the field types `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, and `r2c`; `NONE`, `FIXED`, and `PARAMETERIZED` repeated-register modes; the APB4 Completer behavior including error responses; the placeholder synchronizer model `m_csr_sync`; the generated `filelist.f` and per-run `Debug/debug.json`; and the checked-in APB4 example outputs under `examples/APB4_Synchronous/`.
 
 **Excluded:** field-bit overlap checking and other design-specific semantic review of the workbook (the generator checks repeat metadata, identifiers, address alignment, address width, and address overlap); protocols other than APB; byte-lane (sparse) writes; data widths other than 32 bits and address widths other than 16 bits; interrupt aggregation; the technology synchronizer cell (the integrator replaces `m_csr_sync`); the connection of the module to the rest of the IP.
 
@@ -1270,7 +1274,7 @@ The X policy: outputs are 0 after reset; the field inputs and APB inputs may be 
 |---|---|---|
 | `run_generator_test.py` | Files, ports, error exits, repeatability on both sheets | PASS, 16 of 16 checks |
 | `run_golden_test.py` | Nine simulation configurations: ASYNC 0 with 1, 2, 4 monitor entries; ASYNC 1 with 2 entries at 1:1, 1:3.3, 3.3:1, 3 entries at 1.43:1, 4 entries at 1:1.43, 1 entry at 1:1.5; 7 573 to 12 205 checks each | PASS, 0 failed checks |
-| Reference RTL | `RTL/m_vlsi_csr.sv` equals the module generated from sheet `CSR`; sheets `CSR` and `ASYNC_CSR` differ only in the module name and the default of `PARA_ASYNCHRONOUS` | PASS |
+| Reference RTL | `examples/APB4_Synchronous/RTL/m_vlsi_apb4_csr.sv` equals the module generated from sheet `CSR` after module-name normalization; sheets `CSR` and `ASYNC_CSR` differ only in the module name and the default of `PARA_ASYNCHRONOUS` | PASS |
 | Mutation check | Ten single faults (priority of `rwi`, `w1c`; `w0c`, `w2c`, `r2c` semantics; `r2c` clearing all indices; PSTRB and PPROT checks; monitor stride; `rw` bit slice) | 10 of 10 detected |
 | Verilator 5 `-Wall` | Four parameter sets (ASYNC 0 and 1, monitor count 1, 2, 4) | Only `UNUSEDSIGNAL` for `i_apb_pprot[2,0]`, `reg_wdata[31:24,16:0]` and (ASYNC 0) `w_rd_ack_fall`; accepted |
 | slang | Top `m_vlsi_csr` | 0 errors, 0 warnings |
@@ -1433,7 +1437,7 @@ Record technical assumptions, external dependencies, and unresolved decisions he
 | DEC-006 | Decision | On a `w1c` field a hardware load has priority over a software clear in the same cycle, so a new event is never lost; `rwi` keeps software first. Generator 2.1 (generator 2.0 and earlier gave the software clear priority) | REQ-FUNC-003, Section B.11.3, WF-008 | Closed 2026-10-28 (user decision) |
 | DEC-007 | Decision | A `w2c` software write clears the entire field, regardless of the written data; a simultaneous hardware load wins | REQ-FUNC-002, REQ-FUNC-003 | Closed 2026-11-01 (user decision) |
 | DEC-008 | Decision | One RTL source contains both clock architectures. Workbook `Asynchronous` sets the default of `PARA_ASYNCHRONOUS`; an instance may override it at elaboration | REQ-PARAM-001, Section B.8 | Closed 2026-11-01 |
-| DEC-009 | Decision | The reference output in the repository is the module generated from sheet `CSR` only (`RTL/m_vlsi_csr.sv`, `RTL/models/m_csr_sync.sv`, `RTL/filelist.f`, `Debug/debug.json`); sheet `ASYNC_CSR` gives the same source and is used by the tests | DEC-008, REQ-GEN-005 | Closed 2026-11-02 |
+| DEC-009 | Decision | The APB4 example output in the repository is generated from sheet `CSR` (`examples/APB4_Synchronous/RTL/m_vlsi_apb4_csr.sv`, `examples/APB4_Synchronous/RTL/models/m_csr_sync.sv`, `examples/APB4_Synchronous/RTL/filelist.f`, and `examples/APB4_Synchronous/Debug/debug.json`); sheet `ASYNC_CSR` gives the same source and is used by the tests | DEC-008, REQ-GEN-005 | Updated 2026-11-04 |
 | TBD-001 | TBD | Frequency, area, and power targets and the timing budgets are not defined | Impact: Sections B.7.1, B.13, B.17 cannot carry numbers; decision needed: project values | Open |
 | TBD-002 | TBD | No bench covered the golden-map register groups and repeat modes | Closed 2026-11-02: `tb_csr_golden.sv` and `run_golden_test.py` (Section B.15.5) | Closed |
 | TBD-003 | TBD | The bound of the bundled-data paths (EXC-002) and the CDC constraints | Impact: CDC sign-off of CFG-ASYNC; decision needed: the bound in destination-clock periods | Open |
@@ -1563,13 +1567,15 @@ A workbook without the new columns continues to generate one register per regist
 Workbook không có các cột mới vẫn sinh một thanh ghi trên mỗi dòng register. Interface module và register map hiện tại không thay đổi.
 
 
-## Part C. Planned extensions (generator 3.x)
+## Part C. Extension research and implemented multi-protocol support (generator 3.0)
 
-Part C is a proposal for the next generation of the generator. **Nothing in it is implemented.** The decisions DEC-A01 to DEC-A12 and the items TBD-A01 to TBD-A06 of Section C.14 were closed by the owner on 2026-11-02. Section numbers inside Part C refer to Part C (written C.n); references to Part A and Part B are written with their letter. The baseline is generator 2.4 as described in Parts A and B.
+Sections C.1–C.19 preserve the earlier research and proposal for additional register-field attributes; those attributes remain **unimplemented** unless already listed in Parts A/B. Section C.20 is the current normative specification for the implemented 3.0 AXI4-Lite and AHB-Lite backends. The earlier proposal text in C.20 has been replaced by the verified implementation contract. Section numbers inside Part C refer to Part C (written C.n); references to Part A and Part B are written with their letter.
 
 ### C.0 Tóm tắt bằng tiếng Việt
 
-**Mục tiêu.** Generator 2.4 chỉ có 7 kiểu field (`rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`), một cách nạp phần cứng duy nhất (nạp cả field bằng `we`/`wdata`), kiểm tra lỗi bằng hai cổng tĩnh toàn cục, và chỉ sinh RTL. Các IP và SoC/MCU thực tế dùng thêm nhiều thuộc tính. Tài liệu này khảo sát SystemRDL 2.0, IP-XACT, UVM RAL, OpenTitan `reggen`, tài liệu MCU (Microchip, Nordic, AMD, ST, Raspberry Pi), RISC-V và các tài liệu an toàn chức năng, rồi đề xuất tập thuộc tính nên bổ sung.
+**Tình trạng hiện tại.** Generator 3.0 sinh giao diện APB4, AXI4-Lite hoặc AHB-Lite theo từng sheet. Hai backend mới dùng data 32 bit; AXI4-Lite có ba mode outstanding và độ sâu riêng cho read/write; AHB-Lite hỗ trợ truy cập nhỏ hơn word cùng ba quy tắc endian. Mục C.20 mô tả implementation đang có. Các thuộc tính field bổ sung liệt kê dưới đây là đề xuất lịch sử và chưa được triển khai.
+
+**Mục tiêu của khảo sát trước đây.** Generator 2.4 có các kiểu field `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`, một cách nạp phần cứng bằng `we`/`wdata`, kiểm tra APB qua các cổng tĩnh và chỉ sinh RTL. Các mục dưới đây khảo sát SystemRDL 2.0, IP-XACT, UVM RAL, OpenTitan `reggen`, tài liệu MCU, RISC-V và tài liệu an toàn chức năng để đề xuất mở rộng thuộc tính.
 
 **Đề xuất chính, xếp theo mức ưu tiên.**
 
@@ -1588,6 +1594,8 @@ Part C is a proposal for the next generation of the generator. **Nothing in it i
 | P2 | Thanh ghi bí danh `SET`/`CLR`/`TOG` | Sửa bit nguyên tử, tránh đọc-sửa-ghi bị ngắt xen vào (RP2040) |
 | P2 | Thanh ghi rộng 64/128 bit đọc nhất quán, preload/shadow có sự kiện cập nhật, cửa sổ `external` (FIFO/RAM), thanh ghi trạng thái lỗi CSR, `soft reset` có `nasr` | Timer 64 bit, PWM, FIFO, gỡ lỗi |
 | P3 | Thanh ghi shadow hai pha, parity/ECC, reset lấy từ chân, nhiều miền clock, xuất IP-XACT/SVD | An toàn chức năng, tích hợp lớn |
+
+**Giao thức bus.** Mục C.20 đề xuất chọn một trong ba interface cho mỗi lần sinh: APB4 (giữ tương thích), AXI4-Lite hoặc AHB-Lite. Đề xuất khóa rõ profile AHB-Lite; không gọi chung là “AHB” vì AHB-Lite và AHB5 có các tín hiệu mở rộng khác nhau.
 
 **Không đề xuất** (lý do ở Mục 12): trường người dùng APB5 (`PAUSER`/`PWUSER`), `PNSE`, bí danh trường IP-XACT 2022, `haltenable` của SystemRDL.
 
@@ -1609,11 +1617,12 @@ Define which register and field attributes the generator shall add, why, and exa
 - A new workbook column `ATTRIBUTES` and new configuration-table keys (Section C.4).
 - New generated ports, parameters, and registers, and their naming (Section C.10).
 - New generated collateral: C header, UVM register model, documentation, validation report (Section C.11).
+- A protocol-selectable bus adapter for APB4, AXI4-Lite, or AHB-Lite; see the separate proposal in Section C.20.
 - Requirements, validation rules, tests, and a roadmap (Sections C.13 to C.15).
 
 #### C.1.3 Out of scope
 
-- A protocol other than APB (REQ-GEN-004 stays).
+- Implementation of a non-APB backend as part of the register-attribute release. Multi-protocol generation is proposed separately in Section C.20 and requires its own approval, implementation, and verification plan.
 - Bus-fabric functions: arbitration, address translation, bridges.
 - Physical implementation, clock-gating cells, and technology wrappers (the existing `m_csr_sync` rule stays).
 - Implementation of any item. This is a specification for review.
@@ -2410,6 +2419,8 @@ Work breakdown for 3.0: parser and validation first (it blocks all other work), 
 - DVCon, automatic insertion of a safety mechanism for registers: https://dvcon-proceedings.org/wp-content/uploads/154-Automatic-Insertion-of-a-Safety-Mechanism-for-Registers-in-RTL-Modules.pdf
 - RISC-V privileged architecture, CSR field types: https://docs.riscv.org/reference/isa/extensions/priv-1p13/_attachments/riscv-privileged-priv_1_13.pdf
 - AMBA APB protocol specification (IHI 0024D) and the APB4 profile of this repository (`reference` in the main specification)
+- Arm, *AMBA AXI and ACE Protocol Specification*, IHI 0022H (AXI4-Lite, Part B1, §§B1.1–B1.4): https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/IHI0022H_amba_axi_protocol_spec.pdf
+- Arm, *AMBA AHB Protocol Specification*, IHI 0033C, Issue C (latest issue; AHB-Lite-compatible baseline, §§2.2–2.3, 3, 5.1.3, 6, 8.2): https://developer.arm.com/documentation/ihi0033/c/
 
 ---
 
@@ -2703,6 +2714,159 @@ The previous-value flop and the inverter give a rising-edge event. The event set
 
 **Not drawn.** The counter (Section C.8.2), preload, wide-register snapshot, shadow compare and parity use adders, comparators, wide registers or XOR trees that are not single basic cells; they are built from the library cells `VLSIT_CELL_FA`, `_HA`, `_XOR3` and `_AOI*` and will be drawn when they are implemented.
 
+### C.20 Implemented multi-protocol CSR interface generation
+
+**Status: Implemented in generator 3.0.** One workbook sheet generates one RTL module with one selected bus interface. APB4 behavior is retained from generator 2.4. AXI4-Lite and AHB-Lite are implemented by dedicated emitters in `CSR_Protocol_Generation.py`, sharing the register-field model in `CSR_Generation.py`.
+
+#### C.20.1 Scope and bus profiles
+
+| Workbook `Protocol` | Generated role | Implemented profile |
+|---|---|---|
+| `APB`, `APB4` | APB Completer | Legacy APB4 profile in Parts A/B |
+| `AXI4-Lite`, `AXI`, `AXIL` | AXI4-Lite Subordinate | 32-bit data, 2–32-bit byte address, five AXI4-Lite channels, no IDs or USER signals |
+| `AHB-Lite`, `AHB` | AHB-Lite Subordinate | 32-bit data, 2–32-bit byte address, HTRANS/HREADY pipeline, HSIZE subword accesses; no HPROT/HWSTRB/HNONSEC ports |
+
+The AXI4-Lite profile follows Arm IHI 0022H.c Part B1; the AHB-Lite profile follows Arm IHI 0033C. AXI `AWPROT` and `ARPROT` pins are present but not evaluated. The AHB port list does not include `HPROT`. The generator does not implement the proposed `level` attribute or protocol-level protection filtering; apply protection upstream if required.
+
+#### C.20.2 Workbook configuration
+
+| Key | Allowed value | Default / applicability |
+|---|---|---|
+| `Protocol` | `APB`, `APB4`, `AXI4-Lite`/`AXI`/`AXIL`, `AHB-Lite`/`AHB` | Required; one bus per sheet |
+| `Data Width` | AXI4-Lite/AHB-Lite: `32`; APB4: 8–32, byte multiple | Required |
+| `Address Width` | AXI4-Lite: 2–32; AHB-Lite: 2–32; APB4: 1–32 | Required; byte address width |
+| `Asynchronous` | `0` or `1` | Required; selects same-clock or separate register-clock operation |
+| `Strobe Mode` | `HONOR` or `REJECT` | Default `HONOR`; applies to AXI4-Lite/AHB-Lite writes |
+| `AXI Outstanding Mode` | `SINGLE`, `READ_WRITE`, `QUEUED` | Default `SINGLE`; AXI4-Lite only |
+| `AXI Read Outstanding Depth` | Integer `1`–`8` | Workbook default; used in `QUEUED` mode |
+| `AXI Write Outstanding Depth` | Integer `1`–`8` | Workbook default; used in `QUEUED` mode |
+| `AHB Endian` | `LITTLE`, `BE8`, `BE32` | Default `LITTLE`; AHB-Lite only |
+| `Register Event Sideband` | `0` or `1` | Default `0`; APB4 only. `1` adds `o_reg_rd_en`, `o_reg_rd_addr`, `o_reg_wr_en`, `o_reg_wr_addr`: the read event is an aligned APB read, the write event is a write to a mapped register with at least one software-writable field (`rw`, `rwi`, `w1c`, `w0c`, `w2c`); each address output is the captured address during its event and zero otherwise |
+
+The workbook records the selected settings for reproducible generation. AXI outstanding mode/depth, `PARA_ASYNCHRONOUS`, write-strobe mode and AHB endian are top-level RTL parameters and can be overridden at elaboration. AXI/AHB require 32-bit data even though APB4 retains the earlier width range.
+
+AXI example:
+
+```text
+Protocol                    AXI4-Lite
+Data Width                  32
+Address Width               16
+Asynchronous                0
+Strobe Mode                 HONOR
+AXI Outstanding Mode        QUEUED
+AXI Read Outstanding Depth  2
+AXI Write Outstanding Depth 4
+```
+
+AHB example:
+
+```text
+Protocol       AHB-Lite
+Data Width     32
+Address Width  16
+Asynchronous   0
+Strobe Mode    HONOR
+AHB Endian     LITTLE
+```
+
+#### C.20.3 AXI4-Lite interface contract
+
+The Subordinate implements AW, W, B, AR and R channels. AW and W are captured independently and paired exactly once. `WSTRB` maps each data byte to the corresponding CSR byte lane. In `HONOR` mode only asserted lanes update. In `REJECT` mode a write with any strobe pattern other than `4'b1111` returns `SLVERR` and has no field side effect.
+
+| Channel | Generated signals | Contract |
+|---|---|---|
+| Clock/reset | `i_clk_axi`, `i_rst_n_axi`; register side `i_clk_reg`, `i_rst_n_reg` | Active-low reset; reset both FIFO sides together in asynchronous mode |
+| AW | `i_axi_awaddr`, `i_axi_awprot`, `i_axi_awvalid`, `o_axi_awready` | Capture on `AWVALID && AWREADY`; `AWPROT` is currently ignored |
+| W | `i_axi_wdata`, `i_axi_wstrb`, `i_axi_wvalid`, `o_axi_wready` | Capture on `WVALID && WREADY` |
+| B | `o_axi_bresp`, `o_axi_bvalid`, `i_axi_bready` | Hold response until `BVALID && BREADY` |
+| AR | `i_axi_araddr`, `i_axi_arprot`, `i_axi_arvalid`, `o_axi_arready` | Capture on `ARVALID && ARREADY`; `ARPROT` is currently ignored |
+| R | `o_axi_rdata`, `o_axi_rresp`, `o_axi_rvalid`, `i_axi_rready` | Hold data/status until `RVALID && RREADY` |
+
+Outstanding counts include requests accepted but not yet response-handshaken:
+
+| Mode | Capacity |
+|---|---|
+| `SINGLE` | One global read or write operation; after reset read is eligible first, then acceptance preference alternates after each accepted operation |
+| `READ_WRITE` | At most one read and one write operation outstanding concurrently |
+| `QUEUED` | Separate read and write limits from their respective depth parameters, each 1–8 |
+
+The shared CSR engine uses round-robin arbitration and resets its issue preference to read. If only one direction is ready, it proceeds without waiting for the other. Same-cycle read/write accesses to one register follow issue order, not a global AXI acceptance order. Each response queue preserves order within its direction.
+
+`OKAY` indicates a successful mapped, aligned operation. `DECERR` indicates an unmapped address. `SLVERR` indicates a misaligned address or a partial write rejected by `Strobe Mode=REJECT`. Error reads return zero. In `HONOR` mode, a zero-`WSTRB` write makes no field change and returns `OKAY`. [SRC-BUS-01]
+
+#### C.20.4 AHB-Lite interface contract
+
+A transfer is captured only when `HSEL=1`, `HREADY=1`, and `HTRANS` is `NONSEQ` or `SEQ`. `IDLE` and `BUSY` do not issue CSR accesses. The accepted address/control phase is paired with the following data phase; `HWDATA` supplies write data. Each burst beat is handled as an independent CSR access; `HBURST` does not cause buffering or aggregation. CSR decode uses the containing 32-bit aligned word address, while the original low address bits select subword lanes.
+
+| Group | Generated signals |
+|---|---|
+| Clock/reset | `i_clk_ahb`, `i_rst_n_ahb`; register side `i_clk_reg`, `i_rst_n_reg` |
+| Inputs | `i_ahb_hsel`, `i_ahb_hready`, `i_ahb_htrans`, `i_ahb_haddr`, `i_ahb_hwrite`, `i_ahb_hsize`, `i_ahb_hburst`, `i_ahb_hwdata` |
+| Outputs | `o_ahb_hreadyout`, `o_ahb_hresp`, `o_ahb_hrdata` |
+
+Only byte (`HSIZE=0`), halfword (`1`), and word (`2`) accesses are supported. Halfword and word addresses must be naturally aligned. `HONOR` writes update the selected lanes. `REJECT` returns ERROR for byte/halfword writes; subword reads remain permitted. Endian mode selects bus-to-register conversion:
+
+| Mode | Byte at offset 0 on a 32-bit bus | Write data to CSR word | Read data to AHB bus |
+|---|---|---|---|
+| `LITTLE` | `HWDATA[7:0]` | Pass through | Pass through |
+| `BE8` | `HWDATA[7:0]`; multibyte elements use big-endian byte order | Reverse four byte lanes | Reverse four byte lanes |
+| `BE32` | `HWDATA[31:24]` | Pass through | Pass through |
+
+An invalid size/alignment or unmapped word returns the required two-cycle ERROR: cycle 1 has `HRESP=ERROR`, `HREADYOUT=0`; cycle 2 has `HRESP=ERROR`, `HREADYOUT=1`. Rejected accesses do not update a CSR field. [SRC-BUS-02]
+
+#### C.20.5 Clocking, reset and generated architecture
+
+`Asynchronous=0` selects the bus clock/reset for CSR state and elaborates single-clock request/response FIFOs without CDC synchronizers. `Asynchronous=1` selects `i_clk_reg`/`i_rst_n_reg`; the bus front end remains in the AXI or AHB clock domain and dual-clock request/response FIFOs cross the boundary. In asynchronous mode reset both FIFO sides together and synchronize reset deassertion externally to each clock domain. The generator does not add reset synchronizers or perform CDC/RDC signoff.
+
+The emitted CSR module is the sole protocol-facing RTL module. `RTL/filelist.f` includes `m_csr_sync_fifo.sv` and `m_csr_async_fifo.sv` for the selected AXI/AHB clock mode and `m_csr_sync.sv` for APB asynchronous mode. These FIFO sources are behavioral models; replace or qualify the asynchronous implementation against the project's approved CDC FIFO before tape-out.
+
+#### C.20.6 Implemented decisions
+
+| Topic | Implemented choice |
+|---|---|
+| Generated bus | Exactly one selected bus interface per module |
+| AXI data width | 32 bits |
+| AHB profile/data width | AHB-Lite, 32 bits, no AHB5 sideband extensions |
+| AXI outstanding | `SINGLE`, `READ_WRITE`, or `QUEUED`; separate read/write depths |
+| Shared engine arbitration | Round-robin; reset selects read; simultaneous same-register accesses follow issue order |
+| Partial writes | `HONOR` or `REJECT` |
+| AHB endian | `LITTLE`, `BE8`, or `BE32`; workbook default is `LITTLE` |
+| Async clocks | `Asynchronous=1` selects separate bus/register clocks and dual-clock FIFO CDC; `0` selects the bus clock with single-clock FIFOs |
+
+#### C.20.7 Requirements and verification status
+
+| ID | Requirement | Evidence |
+|---|---|---|
+| REQ-BUS-001 | Parse APB4, AXI4-Lite and AHB-Lite sheets and emit only the selected bus interface | Generator regression and workbook examples |
+| REQ-BUS-002 | Capture AXI AW/W independently; hold B/R responses under backpressure | `tb_axil.sv` |
+| REQ-BUS-003 | Enforce outstanding limits and round-robin issue order, with reset preference read | `tb_axil.sv`; `AXIL_SINGLE`, `AXIL_READ_WRITE`, `AXIL_QUEUED` |
+| REQ-BUS-004 | Honor/reject AXI strobes and return AXI error responses | `tb_axil.sv` |
+| REQ-BUS-005 | Capture AHB address/control, align CSR decode, map subword lanes, return two-cycle ERROR | `tb_ahblite.sv` |
+| REQ-BUS-006 | Support AHB LITTLE/BE8/BE32 mapping and asynchronous FIFO configuration | `tb_ahblite.sv`; `AHB_LITE_LE`, `AHB_LITE_BE8`, `AHB_LITE_BE32`, `AHB_LITE_ASYNC` |
+
+Run the regressions with:
+
+```text
+python sim/tests/generator_test/run_generator_test.py
+python sim/tests/protocol_test/run_protocol_test.py
+```
+
+The reported protocol matrix is the result of the runs listed above. Lint/elaboration is not simulation. CDC/RDC analysis, synthesis/area characterization, and formal verification are outside these regressions.
+
+| Run | Result |
+|---|---|
+| Generator regression | PASS: 20/20 checks (`sim/tests/generator_test/run_generator_test.py`) |
+| AXI4-Lite/AHB-Lite simulation | PASS: 8 generated configurations; 42 self-checking cases across those runs (26 AXI4-Lite, 16 AHB-Lite) |
+| Verilator lint | PASS: 8 configurations, matching the protocol simulation matrix |
+| CDC/RDC, synthesis, formal | Not performed; FIFO CDC behavior was functionally simulated, not independently analyzed |
+
+#### C.20.8 References
+
+| ID | Source | Clauses used |
+|---|---|---|
+| SRC-BUS-01 | Arm, *AMBA AXI and ACE Protocol Specification*, IHI 0022H.c, Part B1; [official Arm PDF](https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/IHI0022H_amba_axi_protocol_spec.pdf) | AXI4-Lite channels, strobes, subordinate response behavior |
+| SRC-BUS-02 | Arm, *AMBA AHB Protocol Specification*, IHI 0033C, Issue C; [official Arm specification](https://developer.arm.com/documentation/ihi0033/c/) and [official PDF](https://documentation-service.arm.com/static/6141bf0d674a052ae36ca811?token=) | Transfer acceptance, HSIZE, two-cycle ERROR, data buses, endianness §6.2 |
+---
 
 ## Part D. Appendices
 
@@ -2718,8 +2882,9 @@ The previous-value flop and the inverter give a rising-edge event. The event set
 | 2.2 | 2026-11-01 | Added `w0c`, `w2c`, and `r2c`; generated one RTL source with `PARA_ASYNCHRONOUS` defaulted from the workbook; both clock architectures use static ports and generate-time selection. |
 | 2.3 | 2026-11-01 | Added `FIXED` register expansion and `PARAMETERIZED` packed-array register banks, workbook columns H–K, address and identifier checks, repeated-register specification, and draw.io option diagram. |
 | Golden map refresh | 2026-11-01 | Replaced the legacy `abc`/`def` workbooks with `CSR_GOLDEN_FORMAT.xlsx`; added `engine`, `port`, and `monitor` examples; regenerated synchronous/asynchronous RTL and per-sheet debug data; updated project documentation. |
-| 2.4 | 2026-11-02 | Generated RTL is lint clean (generate-loop names per HIE-05, 32-bit address compares, one branch statement per line); new golden-map simulation testbench with mutant check; removed the stale duplicate RTL, benches and Makefiles; one reference output (`RTL/m_vlsi_csr.sv`, `Debug/debug.json`). |
+| 2.4 | 2026-11-02 | Generated RTL is lint clean (generate-loop names per HIE-05, 32-bit address compares, one branch statement per line); new golden-map simulation testbench with mutant check; removed the stale duplicate RTL, benches and Makefiles; one reference output, now organized under `examples/APB4_Synchronous/`. |
 | 2.4 (documents) | 2026-11-02 | All specification documents merged into `spec/CSR_Generator_Specification.md`: script flow with flowcharts, logic schematics of every option, user guide, normative specification, planned extensions. |
+| 3.0 | 2026-11-04 | Added AXI4-Lite and AHB-Lite backends; configurable AXI outstanding modes/read-write depths; AXI/AHB write-lane policies; AHB endian modes; parameter-selected single-clock or dual-clock FIFO models; workbook examples; protocol testbench and regression. C.20 documents the implemented contract. |
 
 ### D.2 Figure index
 
@@ -2777,20 +2942,21 @@ The schematics and flowcharts are produced by `spec/figures/tools/make_figures.p
 
 ```text
 APB-CSR-Generator/
-├── CSR_Generation.py                 generator
-├── CSR_GOLDEN_FORMAT.xlsx            reference workbook (sheets CSR and ASYNC_CSR)
+├── CSR_Generation.py                 workbook parser and APB4 generator
+├── CSR_Protocol_Generation.py         AXI4-Lite and AHB-Lite generators
+├── CSR_GOLDEN_FORMAT.xlsx            complete golden and simulation workbook
 ├── README.md                         short entry page
-├── RTL/                              reference output of sheet CSR
-│   ├── m_vlsi_csr.sv
-│   ├── filelist.f
-│   └── models/m_csr_sync.sv
-├── Debug/debug.json                  reference debug dump
+├── examples/
+│   ├── APB4_Synchronous/             APB4 workbook, RTL, filelist, and debug report
+│   ├── AXI4_Lite/                    AXI4-Lite workbook, RTL, filelist, and debug report
+│   └── AHB_Lite/                     AHB-Lite workbook, RTL, filelist, and debug report
 ├── spec/
 │   ├── CSR_Generator_Specification.md   this document
 │   └── figures/                      logic/ (L01..L21, P01..P08), flow/ (F1..F5), waveforms, tools/
 ├── sim/tests/
-│   ├── golden_test/                  tb_csr_golden.sv, run_golden_test.py
-│   └── generator_test/               run_generator_test.py
+│   ├── golden_test/                  APB4 golden-map testbench and runner
+│   ├── generator_test/               generator regression
+│   └── protocol_test/                AXI4-Lite and AHB-Lite testbenches and runner
 ├── lint/                             verilator and VC Static scripts
 └── source_me.sh                      sets CSR_GEN_HOME for the lint scripts
 ```

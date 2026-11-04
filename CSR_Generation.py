@@ -4,6 +4,8 @@
 # Function: CSR Generation Tool
 # Page: VLSI Technology
 #
+# Version 3.0: add AXI4-Lite/AHB-Lite register interfaces, programmable outstanding policy,
+#   byte-lane writes, AHB endian modes, and parameter-selected sync/async queues.
 # Version 2.4: lint clean-up of the generated RTL (generate-loop names per rule HIE-05, 32-bit address
 #   compares, one branch statement per line in the read decode); behavior unchanged from version 2.3.
 #   A workbook with fewer than 11 columns (the older 7-column layout) is read without the repeat columns,
@@ -26,8 +28,10 @@ import re
 import shutil
 import sys
 from datetime import date, datetime
+from CSR_Protocol_Generation import (ASYNC_FIFO_MODEL, ASYNC_FIFO_MODULE, SYNC_FIFO_MODEL,
+                                    SYNC_FIFO_MODULE, ahblite_protocol, axil_protocol)
 
-VERSION = "2.4"
+VERSION = "3.0"
 RSVD_KEY = 'reserved'
 VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c'}
 FLOW_NAME = "VLSIT RTL Generator AI Automation Flow"
@@ -233,46 +237,43 @@ class bit:
         r = self.reg_group
         nxt = f"w_{r}_{self.name}_nxt"
         cur = f"reg_{r}_{self.name}"
-        space = " " * (len(f"  assign {nxt} = ("))
+        mask = f"reg_wmask{self.field}"
+        sw_we = f"(w_we_{r} & (|{mask}))"
         if self.type == 'rw':
             self.rtl += f'''
-  // {r}_{self.name} next value (rw): a software write loads it, otherwise hold.
-  assign {nxt} = (w_we_{r}) ? reg_wdata{self.field} : {cur};
+  // {r}_{self.name} next value (rw): update only byte lanes selected by the bus strobe.
+  assign {nxt} = {sw_we} ? ((reg_wdata{self.field} & {mask}) | ({cur} & ~{mask})) : {cur};
 '''
         elif self.type == 'rwi':
             self.rtl += f'''
-  // {r}_{self.name} next value (rwi): software write, then hardware write, then hold.
-  assign {nxt} = (w_we_{r}) ? reg_wdata{self.field}
-{space}: (i_hw_we_{r}_{self.name}) ? i_hw_wdata_{r}_{self.name}
-{space}: {cur};
+  // {r}_{self.name} next value (rwi): software-selected byte lanes override hardware updates.
+  assign {nxt} = {sw_we} ? ((reg_wdata{self.field} & {mask})
+                            | ((i_hw_we_{r}_{self.name} ? i_hw_wdata_{r}_{self.name} : {cur}) & ~{mask}))
+                          : (i_hw_we_{r}_{self.name} ? i_hw_wdata_{r}_{self.name} : {cur});
 '''
         elif self.type == 'w1c':
             self.rtl += f'''
-  // {r}_{self.name} next value (w1c): hardware write, then software 1 clears, then hold.
+  // {r}_{self.name} next value (w1c): hardware update wins; selected written 1 bits clear.
   assign {nxt} = (i_hw_we_{r}_{self.name}) ? i_hw_wdata_{r}_{self.name}
-{space}: (w_we_{r}) ? (~reg_wdata{self.field} & {cur})
-{space}: {cur};
+                          : ({sw_we} ? ({cur} & ~(reg_wdata{self.field} & {mask})) : {cur});
 '''
         elif self.type == 'w0c':
             self.rtl += f'''
-  // {r}_{self.name} next value (w0c): hardware load wins; written zero bits clear.
+  // {r}_{self.name} next value (w0c): hardware update wins; selected written zero bits clear.
   assign {nxt} = (i_hw_we_{r}_{self.name}) ? i_hw_wdata_{r}_{self.name}
-{space}: (w_we_{r}) ? (reg_wdata{self.field} & {cur})
-{space}: {cur};
+                          : ({sw_we} ? ({cur} & (reg_wdata{self.field} | ~{mask})) : {cur});
 '''
         elif self.type == 'w2c':
             self.rtl += f'''
-  // {r}_{self.name} next value (w2c): hardware load wins; any software write clears all.
+  // {r}_{self.name} next value (w2c): hardware load wins; any strobed write clears the field.
   assign {nxt} = (i_hw_we_{r}_{self.name}) ? i_hw_wdata_{r}_{self.name}
-{space}: (w_we_{r}) ? '0
-{space}: {cur};
+                          : ((w_we_{r} & (|reg_wstrb)) ? '0 : {cur});
 '''
         elif self.type == 'r2c':
             self.rtl += f'''
   // {r}_{self.name} next value (r2c): hardware load wins; a read clears the field.
   assign {nxt} = (i_hw_we_{r}_{self.name}) ? i_hw_wdata_{r}_{self.name}
-{space}: (w_rd_{r}) ? '0
-{space}: {cur};
+                          : (w_rd_{r} ? '0 : {cur});
 '''
 
 
@@ -370,16 +371,22 @@ class parameterized_register:
             else:
                 value_part += f"      w_{n}_value[gen_idx]{b.field} = {cur};\n"
                 sw_we = f"w_we_{n}[gen_idx]"
+                mask = f"reg_wmask{b.field}"
+                sw_field_we = f"({sw_we} & (|{mask}))"
                 if b.type == 'rw':
-                    expr = f"({sw_we}) ? reg_wdata{b.field} : {cur}"
+                    expr = f"{sw_field_we} ? ((reg_wdata{b.field} & {mask}) | ({cur} & ~{mask})) : {cur}"
                 elif b.type == 'rwi':
-                    expr = f"({sw_we}) ? reg_wdata{b.field} : (i_hw_we_{n}_{b.name}[gen_idx] ? i_hw_wdata_{n}_{b.name}[gen_idx] : {cur})"
+                    expr = (f"{sw_field_we} ? ((reg_wdata{b.field} & {mask}) | "
+                            f"((i_hw_we_{n}_{b.name}[gen_idx] ? i_hw_wdata_{n}_{b.name}[gen_idx] : {cur}) & ~{mask})) "
+                            f": (i_hw_we_{n}_{b.name}[gen_idx] ? i_hw_wdata_{n}_{b.name}[gen_idx] : {cur})")
                 elif b.type == 'w1c':
-                    expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : ({sw_we} ? (~reg_wdata{b.field} & {cur}) : {cur})"
+                    expr = (f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] "
+                            f": ({sw_field_we} ? ({cur} & ~(reg_wdata{b.field} & {mask})) : {cur})")
                 elif b.type == 'w0c':
-                    expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : ({sw_we} ? (reg_wdata{b.field} & {cur}) : {cur})"
+                    expr = (f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] "
+                            f": ({sw_field_we} ? ({cur} & (reg_wdata{b.field} | ~{mask})) : {cur})")
                 elif b.type == 'w2c':
-                    expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : ({sw_we} ? '0 : {cur})"
+                    expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : (({sw_we} & (|reg_wstrb)) ? '0 : {cur})"
                 elif b.type == 'r2c':
                     expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : (w_rd_{n}[gen_idx] ? '0 : {cur})"
                 else:
@@ -434,7 +441,7 @@ class apb_protocol:
             port("i_apb_pwrite", "input", 1),
             port("i_apb_paddr", "input", self.addr_wd, "[LPARA_ADDR_W-1:0]"),
             port("i_apb_pwdata", "input", self.data_wd, "[LPARA_DATA_W-1:0]"),
-            port("i_apb_pstrb", "input", 4, "[LPARA_STRB_W-1:0]"),
+            port("i_apb_pstrb", "input", self.data_wd // 8, "[LPARA_STRB_W-1:0]"),
             port("i_apb_pprot", "input", 3),
             port("o_apb_pready", "output", 1),
             port("o_apb_pslverr", "output", 1),
@@ -448,6 +455,8 @@ class apb_protocol:
             L.append(port(name, "logic", 1))
         L.append(port("reg_addr", "logic", self.addr_wd, "[LPARA_ADDR_W-1:0]"))
         L.append(port("reg_wdata", "logic", self.data_wd, "[LPARA_DATA_W-1:0]"))
+        L.append(port("reg_wstrb", "logic", self.data_wd // 8, "[LPARA_STRB_W-1:0]"))
+        L.append(port("reg_wmask", "logic", self.data_wd, "[LPARA_DATA_W-1:0]"))
         L.append(port("reg_slverr", "logic", 1))
         L.append(port("w_rd_en", "logic", 1))
         L.append(port("w_wr_en", "logic", 1))
@@ -467,7 +476,7 @@ class apb_protocol:
   assign w_apb_prot_ok  = i_protect_en ? ~i_apb_pprot[1] : 1'b1;
   assign w_apb_slverr   = i_slverr_en ? (~w_apb_prot_ok
                                          | (|i_apb_paddr[1:0])
-                                         | (~&i_apb_pstrb & i_apb_pwrite)) : 1'b0;
+                                         | (~&i_apb_pstrb[LPARA_STRB_W-1:0] & i_apb_pwrite)) : 1'b0;
 
   // Transfer without error, split into a write and a read.
   assign w_apb_complete = w_apb_setup & ~w_apb_slverr;
@@ -489,6 +498,19 @@ class apb_protocol:
     else if (w_apb_wr)
       reg_wdata <= i_apb_pwdata;
   end
+
+  // Write byte strobes are captured with the write payload and expanded to field-bit masks.
+  always_ff @(posedge {cb}, negedge {rb}) begin : p_ff_wstrb
+    if (!{rb})
+      reg_wstrb <= '0;
+    else if (w_apb_wr)
+      reg_wstrb <= i_apb_pstrb[LPARA_STRB_W-1:0];
+  end
+  generate
+    for (genvar gen_lane = 0; gen_lane < LPARA_STRB_W; gen_lane++) begin : gen_apb_wmask
+      assign reg_wmask[(gen_lane * 8) +: 8] = {{8{{reg_wstrb[gen_lane]}}}};
+    end
+  endgenerate
 
   // Error response flop: loaded in every SETUP phase while i_slverr_en is 1, and held otherwise.
   always_ff @(posedge {cb}, negedge {rb}) begin : p_ff_slverr
@@ -727,7 +749,8 @@ class apb_protocol:
 
 
 class sfr:
-    def __init__(self, module_name, addr_wd, data_wd, reg_list, protocol, async_option, sheet="", project="APB-CSR-Generator", author=None):
+    def __init__(self, module_name, addr_wd, data_wd, reg_list, protocol, async_option, sheet="",
+                 project="APB-CSR-Generator", author=None, config=None):
         self.module_name = module_name
         self.addr_wd = addr_wd
         self.data_wd = data_wd
@@ -735,8 +758,33 @@ class sfr:
         self.sheet = sheet
         self.project = project
         self.author = author if author else f"{getpass.getuser()} (user)"
-        if protocol.lower() == 'apb':
+        self.protocol_name = str(protocol).upper()
+        self.config = config or {}
+        self.reg_event_sideband = int(self.config.get('reg_event_sideband', 0)) == 1
+        if self.protocol_name in {'APB', 'APB4'}:
+            self.protocol_name = 'APB'
             self.protocol = apb_protocol(data_wd=data_wd, addr_wd=addr_wd, async_option=async_option)
+            self.protocol.clock_assign = (
+                "  assign w_clk_reg = (PARA_ASYNCHRONOUS == 32'd1) ? i_clk_reg : i_clk_apb;\n"
+                "  assign w_rst_n_reg = (PARA_ASYNCHRONOUS == 32'd1) ? i_rst_n_reg : i_rst_n_apb;\n")
+            self.protocol.extra_parameters = []
+            self.protocol.extra_localparams = ""
+            self.protocol_name = 'APB4'
+        elif self.protocol_name in {'AXI', 'AXIL', 'AXI4-LITE', 'AXI4_LITE'}:
+            self.protocol_name = 'AXI4-Lite'
+            self.protocol = axil_protocol(
+                data_wd=data_wd, addr_wd=addr_wd, async_option=async_option,
+                strobe_mode=self.config.get('strobe_mode', 'HONOR'),
+                outstanding_mode=self.config.get('outstanding_mode', 'SINGLE'),
+                rd_depth=self.config.get('rd_depth', 2), wr_depth=self.config.get('wr_depth', 2),
+                port=port, port_group=port_group)
+        elif self.protocol_name in {'AHB', 'AHB-LITE', 'AHB_LITE'}:
+            self.protocol_name = 'AHB-Lite'
+            self.protocol = ahblite_protocol(
+                data_wd=data_wd, addr_wd=addr_wd, async_option=async_option,
+                strobe_mode=self.config.get('strobe_mode', 'HONOR'),
+                endian_mode=self.config.get('ahb_endian', 'LITTLE'),
+                port=port, port_group=port_group)
         else:
             print(f"ERROR: protocol {protocol} is not implemented")
             sys.exit(1)
@@ -746,6 +794,12 @@ class sfr:
 
     def gen_port_logic_rtl(self):
         groups = list(self.protocol.port_groups)
+        if self.reg_event_sideband:
+            groups.append(port_group("Register transaction event sideband", [
+                port("o_reg_rd_en", "output", 1),
+                port("o_reg_rd_addr", "output", self.addr_wd, "[LPARA_ADDR_W-1:0]"),
+                port("o_reg_wr_en", "output", 1),
+                port("o_reg_wr_addr", "output", self.addr_wd, "[LPARA_ADDR_W-1:0]")]))
         for r in self.reg_list:
             if r.port_list:
                 title = f"Register bank {r.name}" if isinstance(r, parameterized_register) else f"Register {r.name}"
@@ -790,7 +844,7 @@ class sfr:
     "Project": "APB-CSR-Generator",
     "Module": "JSON debug file",
     "Function": "Used to check the configuration after generation",
-    "Author": "Trthinh (Ethan)",
+    "Author": "{self.author}",
     "Generator": "{getpass.getuser()}",
     "Generator version": "{VERSION}",
     "Page": "VLSI Technology",
@@ -799,8 +853,14 @@ class sfr:
         "Module Name": "{self.module_name}",
         "Address Width": "{self.addr_wd}",
         "Data Width": "{self.data_wd}",
-        "Protocol": "APB",
-        "Asynchronous": "{self.async_option}"
+        "Protocol": "{self.protocol_name}",
+        "Asynchronous": "{self.async_option}",
+        "Strobe Mode": "{self.config.get('strobe_mode', 'HONOR')}",
+        "AXI Outstanding Mode": "{self.config.get('outstanding_mode', 'N/A')}",
+        "AXI Read Depth": "{self.config.get('rd_depth', 'N/A')}",
+        "AXI Write Depth": "{self.config.get('wr_depth', 'N/A')}",
+        "AHB Endian": "{self.config.get('ahb_endian', 'N/A')}",
+        "Register Event Sideband": "{int(self.reg_event_sideband)}"
     {bracket_c}
     ],
     "Table - Register Definition": [
@@ -815,9 +875,8 @@ class sfr:
  * AI Flow      : {FLOW_NAME}
  * AI Flow Page : {FLOW_PAGE}
  * Date         : {date.today().isoformat()}
- * Description  : APB4 CSR with synchronous or asynchronous register access.
- *                PARA_ASYNCHRONOUS selects the CDC architecture at elaboration.
- *                Synchronous mode selects i_clk_apb; i_clk_reg stays in the fixed port list.
+ * Description  : {self.protocol_name} CSR register interface with configurable access and CDC mode.
+ *                PARA_ASYNCHRONOUS selects same-clock or asynchronous FIFO operation.
  *                Generated by APB-CSR-Generator v{VERSION}; do not edit by hand.
  *                Source: sheet {self.sheet} of the CSR workbook.
  *                The RTL follows the VLSIT RTL Design Rule v2.
@@ -827,7 +886,8 @@ class sfr:
         localparam_offset = ("  localparam logic [31:0] LPARA_ADDR_W = " + f"32'd{self.addr_wd},\n"
                              "  localparam logic [31:0] LPARA_DATA_W = " + f"32'd{self.data_wd},\n"
                              "  localparam logic [31:0] LPARA_STRB_W = " + f"32'd{self.data_wd // 8},\n")
-        localparam_offset += "  localparam logic [31:0] LPARA_SYNC_STAGES = 32'd2,\n"
+        if self.protocol_name == 'APB4':
+            localparam_offset += "  localparam logic [31:0] LPARA_SYNC_STAGES = 32'd2,\n"
         reg_rtl = ''
         reg_we = ''
         reg_rd = ''
@@ -844,17 +904,38 @@ class sfr:
                     f"  // Parameter unit: register count\n"
                     f"  parameter logic [31:0] {r.count_parameter} = 32'd{r.count_default}"
                 )
-        localparam_offset = localparam_offset[:-2] + "\n"
+        if self.protocol.extra_localparams:
+            localparam_offset += self.protocol.extra_localparams + "\n"
+        else:
+            localparam_offset = localparam_offset[:-2] + "\n"
         self.protocol.prdata_rtl(self.reg_list)
         enables_part = ""
         if reg_we or reg_rd:
             enables_part = f"\n  // Per-register write/read address enables.\n{reg_we}{reg_rd}"
+        if self.reg_event_sideband:
+            align_msb = max(self.data_wd // 8, 2).bit_length() - 2
+            terms = [f"(|w_we_{r.name})" for r in self.reg_list if r.has_we]
+            wr_expr = "\n    | ".join(terms) if terms else "1'b0"
+            enables_part += f"""
+  // Register transaction events are qualified by the captured APB transfer.
+  // Read events include aligned unmapped reads, which return zero. Unaligned reads
+  // are suppressed even when the APB error response is disabled.
+  assign o_reg_rd_en   = w_rd_en & (reg_addr[{align_msb}:0] == {align_msb + 1}'b{'0' * (align_msb + 1)});
+  assign o_reg_rd_addr = o_reg_rd_en ? reg_addr : '0;
+
+  // Write events are asserted only for a mapped register with at least one
+  // software-writable field; rejected and read-only writes do not assert this event.
+  assign o_reg_wr_en   =
+    {wr_expr};
+  assign o_reg_wr_addr = o_reg_wr_en ? reg_addr : '0;
+"""
         parameter_lines.insert(0,
-            "  // Parameter Description: select asynchronous APB-to-register crossing logic.\n"
+            "  // Parameter Description: select same-clock or asynchronous bus-to-register crossing logic.\n"
             "  // Parameter values: 0 (synchronous) or 1 (asynchronous); default follows the workbook.\n"
             "  // Parameter unit: none\n"
             f"  parameter logic [31:0] PARA_ASYNCHRONOUS = 32'd{int(self.async_option)}"
         )
+        parameter_lines.extend(self.protocol.extra_parameters)
         parameter_block = ",\n".join(parameter_lines)
         body = f'''
 module {self.module_name} #(
@@ -864,9 +945,8 @@ module {self.module_name} #(
 
   // Internal signal declarations
 {self.logic_rtl}
-  // The parameter is constant at elaboration, so this selects a clock without a runtime mux.
-  assign w_clk_reg   = (PARA_ASYNCHRONOUS == 32'd1) ? i_clk_reg : i_clk_apb;
-  assign w_rst_n_reg = (PARA_ASYNCHRONOUS == 32'd1) ? i_rst_n_reg : i_rst_n_apb;
+  // The parameter selects the register clock/reset for the chosen bus front end.
+{self.protocol.clock_assign}
 {self.protocol.access}{enables_part}{self.protocol.rtl_rw}{reg_rtl}{self.protocol.rtl_prdata}
 endmodule
 '''
@@ -965,6 +1045,18 @@ def read_workbook(path, sheet_name):
                     cfg['addr_wd'] = int(cell(row, start_col + 1))
                 if 'Asynchronous' in label:
                     cfg['async_option'] = int(cell(row, start_col + 1))
+                if 'Strobe Mode' in label:
+                    cfg['strobe_mode'] = str(cell(row, start_col + 1)).strip().upper()
+                if 'Outstanding Mode' in label:
+                    cfg['outstanding_mode'] = str(cell(row, start_col + 1)).strip().upper()
+                if 'Read Outstanding Depth' in label:
+                    cfg['rd_depth'] = int(cell(row, start_col + 1))
+                if 'Write Outstanding Depth' in label:
+                    cfg['wr_depth'] = int(cell(row, start_col + 1))
+                if 'AHB Endian' in label:
+                    cfg['ahb_endian'] = str(cell(row, start_col + 1)).strip().upper()
+                if 'Register Event Sideband' in label:
+                    cfg['reg_event_sideband'] = int(cell(row, start_col + 1))
                 if 'REGISTER' in label:
                     start_reg = 1
         else:
@@ -989,7 +1081,7 @@ def read_workbook(path, sheet_name):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="APB-CSR-Generator: APB4 CSR RTL from an Excel register map")
+    parser = argparse.ArgumentParser(description="APB-CSR-Generator: APB4, AXI4-Lite, or AHB-Lite CSR RTL from Excel")
     parser.add_argument("workbook")
     parser.add_argument("sheet")
     parser.add_argument("--out", default=os.getcwd(), help="folder that receives RTL/ and Debug/ (default: current folder)")
@@ -1008,6 +1100,40 @@ def main():
     if int(cfg['async_option']) not in (0, 1):
         print("ERROR: Asynchronous must be 0 or 1")
         sys.exit(1)
+    cfg.setdefault('strobe_mode', 'HONOR')
+    cfg.setdefault('outstanding_mode', 'SINGLE')
+    cfg.setdefault('rd_depth', 2)
+    cfg.setdefault('wr_depth', 2)
+    cfg.setdefault('ahb_endian', 'LITTLE')
+    cfg.setdefault('reg_event_sideband', 0)
+    cfg['protocol'] = str(cfg['protocol']).strip()
+    cfg['strobe_mode'] = str(cfg['strobe_mode']).upper()
+    cfg['outstanding_mode'] = str(cfg['outstanding_mode']).upper()
+    cfg['ahb_endian'] = str(cfg['ahb_endian']).upper()
+    protocol_key = cfg['protocol'].upper().replace('_', '-').replace(' ', '')
+    if cfg['ahb_endian'] == 'N/A' and protocol_key not in {'AHB', 'AHB-LITE'}:
+        cfg['ahb_endian'] = 'LITTLE'
+    if protocol_key not in {'APB', 'APB4', 'AXI', 'AXIL', 'AXI4-LITE', 'AHB', 'AHB-LITE'}:
+        print(f"ERROR: Protocol must be APB4, AXI4-Lite, or AHB-Lite; got {cfg['protocol']!r}")
+        sys.exit(1)
+    if cfg['strobe_mode'] not in {'HONOR', 'REJECT'}:
+        print("ERROR: Strobe Mode must be HONOR or REJECT")
+        sys.exit(1)
+    if cfg['outstanding_mode'] not in {'SINGLE', 'READ_WRITE', 'QUEUED'}:
+        print("ERROR: AXI Outstanding Mode must be SINGLE, READ_WRITE, or QUEUED")
+        sys.exit(1)
+    if not (1 <= int(cfg['rd_depth']) <= 8 and 1 <= int(cfg['wr_depth']) <= 8):
+        print("ERROR: AXI read and write outstanding depths must be between 1 and 8")
+        sys.exit(1)
+    if cfg['ahb_endian'] not in {'LITTLE', 'BE8', 'BE32'}:
+        print("ERROR: AHB Endian must be LITTLE, BE8, or BE32")
+        sys.exit(1)
+    if int(cfg['reg_event_sideband']) not in (0, 1):
+        print("ERROR: Register Event Sideband must be 0 or 1")
+        sys.exit(1)
+    if int(cfg['reg_event_sideband']) == 1 and protocol_key not in {'APB', 'APB4'}:
+        print("ERROR: Register Event Sideband is implemented for APB4 only")
+        sys.exit(1)
     reg_list = []
     address_slots = set()
     generated_names = set()
@@ -1021,6 +1147,9 @@ def main():
         sys.exit(1)
     if data_width < 8 or data_width > 32 or data_width % 8:
         print("ERROR: Data Width must be a byte multiple from 8 through 32 bits")
+        sys.exit(1)
+    if protocol_key not in {'APB', 'APB4'} and (data_width != 32 or address_width < 2):
+        print("ERROR: AXI4-Lite and AHB-Lite profiles require 32-bit data and Address Width of at least 2")
         sys.exit(1)
     word_bytes = data_width // 8
     max_address = (1 << address_width) - 1
@@ -1184,7 +1313,7 @@ def main():
             sys.exit(1)
         localparam_names.update(names)
     s = sfr(cfg['module_name'], cfg['addr_wd'], cfg['data_wd'], reg_list, cfg['protocol'], cfg['async_option'],
-            sheet=args.sheet, project=args.project, author=args.author)
+            sheet=args.sheet, project=args.project, author=args.author, config=cfg)
     s.gen_rtl()
 
     out = os.path.abspath(args.out)
@@ -1205,7 +1334,17 @@ def main():
     with open(rtl_path + '/filelist.f', 'w') as f:
         f.write('// filelist.f - generated by APB-CSR-Generator; paths are relative to the folder of this file.\n')
         f.write(f'models/{SYNC_MODULE}.sv\n')
+        if s.protocol_name in {'AXI4-Lite', 'AHB-Lite'}:
+            f.write(f'models/{ASYNC_FIFO_MODULE}.sv\n')
+            f.write(f'models/{SYNC_FIFO_MODULE}.sv\n')
         f.write(s.module_name + '.sv\n')
+    if s.protocol_name in {'AXI4-Lite', 'AHB-Lite'}:
+        fifo_model_path = models_path + '/' + ASYNC_FIFO_MODULE + '.sv'
+        with open(fifo_model_path, 'w') as f:
+            f.write(ASYNC_FIFO_MODEL)
+        sync_fifo_model_path = models_path + '/' + SYNC_FIFO_MODULE + '.sv'
+        with open(sync_fifo_model_path, 'w') as f:
+            f.write(SYNC_FIFO_MODEL)
 
     s.gen_json()
     debug_path = out + "/Debug"
