@@ -61,7 +61,7 @@ def expected_field_ports(ws):
                 else:
                     exp.add('o_' + name)
                     if field_type == 'wo':
-                        exp.add('i_hw_clear_' + name)
+                        exp.add('i_hw_clr_' + name)
                     if field_type in ('rwi', 'w1c', 'w0c', 'w2c', 'r2c'):
                         exp |= {'i_hw_wdata_' + name, 'i_hw_we_' + name}
     return exp

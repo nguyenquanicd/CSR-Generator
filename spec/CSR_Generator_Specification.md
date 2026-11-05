@@ -4,7 +4,7 @@
 |---|---|
 | Document | Specification of APB-CSR-Generator: script flow, workbook reference, user guide, normative design specification, implementation history |
 | Product | `CSR_Generation.py`, a generator of APB4, AXI4-Lite, or AHB-Lite CSR modules from an Excel register map |
-| Generator version described | 3.2; Part B retains the APB4 2.4 baseline, Part C records the 3.0 bus backends, 3.1 `wo` field, and 3.2 `wo` hardware clear |
+| Generator version described | 3.3; Part B retains the APB4 2.4 baseline, Part C records the 3.0 bus backends, 3.1 `wo` field, and 3.2 `wo` hardware clear |
 | Document date | 2026-11-05 |
 | Language | English; Vietnamese summaries and appendices where marked |
 | Replaces | `README.md` (technical content), `APB_CSR_Generator_Design_Specification.md`, `Repeated_Register_Generation_Specification.md`, `CSR_Attribute_Extension_Specification.md` |
@@ -104,10 +104,10 @@ Status legend used in Part A: **[implemented]** the behavior exists in the curre
 
 | Item | Value |
 |---|---|
-| Generator version | 3.2 (`VERSION` in `CSR_Generation.py`) |
+| Generator version | 3.3 (`VERSION` in `CSR_Generation.py`) |
 | RTL rule baseline | VLSIT RTL Design Rule v2 (naming, port layout, header, process labels) |
 | Existing verification evidence | Generator regression and AXI4-Lite/AHB-Lite protocol simulation results are recorded in C.20.7; APB4 2.4 evidence remains in B.15.5 |
-| Version 3.2 status | `wo` hardware-clear is generated and exercised on APB4, AXI4-Lite, and AHB-Lite; generator, golden-map, protocol, and coverage regressions pass (coverage results in `sim/results/coverage/`) |
+| Version 3.2 status (historical) | `wo` hardware-clear is generated and exercised on APB4, AXI4-Lite, and AHB-Lite; generator, golden-map, protocol, and coverage regressions pass (coverage results in `sim/results/coverage/`) |
 | Not done | CDC/RDC signoff, synthesis/area characterization, formal equivalence across versions |
 
 #### A.1.4 Reading the schematics
@@ -128,7 +128,7 @@ The figures of this part are gate-level schematics. Their cells are named after 
 |---|---|
 | Selectable CSR bus | One generated interface per sheet: APB4, AXI4-Lite, or AHB-Lite |
 | Field types | `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`, `wo`, and `reserved` bits |
-| Hardware interface | Output per stored field, including `wo`; input per `ro` field; `i_hw_clear_` input per `wo` field; load enable and load data for `rwi`, `w1c`, `w0c`, `w2c`, `r2c` |
+| Hardware interface | Output per stored field, including `wo`; input per `ro` field; `i_hw_clr_` input per `wo` field; load enable and load data for `rwi`, `w1c`, `w0c`, `w2c`, `r2c` |
 | Register replication | `NONE`, `FIXED` (N named copies), `PARAMETERIZED` (one bank with an elaboration count) |
 | Clock architecture | `PARA_ASYNCHRONOUS=0` uses the selected bus clock; `1` uses the separate register clock and protocol request/response FIFOs |
 | APB4 | SETUP/ACCESS phases, `PREADY`, `PSLVERR`, `PPROT`, `PSTRB`, and legacy access-check inputs |
@@ -327,7 +327,7 @@ Ports per type (`<reg>` and `<field>` from the workbook, `[W-1:0]` omitted for o
 |---|---|---|
 | `ro` | `i_<reg>_<field>` | none |
 | `rw` | none | `o_<reg>_<field>` |
-| `wo` | `i_hw_clear_<reg>_<field>` (3.2) | `o_<reg>_<field>` |
+| `wo` | `i_hw_clr_<reg>_<field>` (3.3; clear behavior added in 3.2) | `o_<reg>_<field>` |
 | `rwi`, `w1c`, `w0c`, `w2c`, `r2c` | `i_hw_we_<reg>_<field>`, `i_hw_wdata_<reg>_<field>` | `o_<reg>_<field>` |
 
 A hardware load and a software access that meet in the same register-clock cycle are resolved by the order in the next-value column. For `rwi` the software write wins; for the four clear types the hardware load wins, so a new event is never lost (decision DEC-006).
@@ -1833,7 +1833,7 @@ Rules:
 |---|---|---|---|---|---|---|
 | `w1s` | stored value | bits written 1 are set | yes | HW interface as `w1c` | `W1S` | `woset`, `sw=rw` |
 | `w1t` | stored value | bits written 1 toggle | yes | | `W1T` | no direct form |
-| `wo` | 0 | stored | yes | **Implemented in 3.1:** the value is visible on `o_`; **3.2:** `i_hw_clear_` synchronously clears the stored value; see C.21 and C.22 | `WO` | `sw=w` |
+| `wo` | 0 | stored | yes | **Implemented in 3.1:** the value is visible on `o_`; **3.2:** `i_hw_clr_` synchronously clears the stored value; see C.21 and C.22 | `WO` | `sw=w` |
 | `pulse` | 0 | a 1 gives a one-cycle pulse on `o_` | none | No storage flop (one output pulse flop, REQ-IF-004); reads 0; width 1 or more (each bit its own pulse) | `WO` (user-defined for the model) | `singlepulse` |
 | `const` | the reset value | ignored | none | No port; the value comes from the `RESET VALUE` column | `RO` | `sw=r` with a constant |
 | `w0s` (P2) | stored value | bits written 0 are set | yes | | `W0S` | `woset` on inverted data |
@@ -2892,7 +2892,7 @@ Generator 3.1 accepts `wo` as a field type for APB4, AXI4-Lite, and AHB-Lite wor
 | Register event sideband | A mapped accepted write to a register containing `wo` qualifies as a software-writable register write event. |
 | Repeated register | `wo` behavior applies to each `FIXED` copy and each active `PARAMETERIZED` entry. |
 
-In generator 3.1, `wo` did not provide a hardware clear. Generator 3.2 adds an active-high `i_hw_clear_<register>_<field>` input; see C.22 for timing and priority. The output port is available to the IP logic; it is not a software readback path.
+In generator 3.1, `wo` did not provide a hardware clear. Generator 3.2 added an active-high `i_hw_clr_<register>_<field>` input. Generator 3.3 keeps that behavior and uses the compact `i_hw_clr_` prefix to meet the 30-character RTL port-name limit; see C.22 for timing and priority. The output port is available to the IP logic; it is not a software readback path.
 
 The generator bus data width is at most 32 bits. A wider value, such as a 256-bit AES key, must be divided across multiple `wo` fields/registers. The AES wrapper defines their word order and assembly; this generator only emits the individual field outputs.
 
@@ -2911,14 +2911,14 @@ The canonical generator and workbook templates support `wo` and hardware clear. 
 
 ### C.22 Hardware clear for write-only fields
 
-Generator 3.2 extends `wo` with an active-high hardware-clear input. This input clears the stored field to zero on the generated register clock, including when a software write is accepted on the same edge. The clear is synchronous, clears the whole field regardless of write strobes, and does not change the `wo` read-as-zero behavior.
+Generator 3.2 introduced an active-high hardware-clear input for `wo` fields, named `i_hw_clear_<register>_<field>`. Version 3.3 keeps the same synchronous clear behavior and uses the shorter `i_hw_clr_<register>_<field>` prefix to meet the VLSIT 30-character port-name limit. Clear sets the stored field to zero on the generated register clock, including when a software write is accepted on the same edge. It clears the whole field regardless of write strobes and does not change the `wo` read-as-zero behavior.
 
 #### C.22.1 Interface and timing
 
 | Configuration | Generated port | Behavior |
 |---|---|---|
-| One register or `FIXED` copy | `input logic i_hw_clear_<register>_<field>` | Sampled on the rising edge of the register clock; high clears the complete field to zero. |
-| `PARAMETERIZED` register bank | `input logic [PARA_<REGISTER>_COUNT-1:0] i_hw_clear_<register>_<field>` | Bit `i` clears copy `i`; inactive entries are ignored by the generated register loop. |
+| One register or `FIXED` copy | `input logic i_hw_clr_<register>_<field>` | Sampled on the rising edge of the register clock; high clears the complete field to zero. |
+| `PARAMETERIZED` register bank | `input logic [PARA_<REGISTER>_COUNT-1:0] i_hw_clr_<register>_<field>` | Bit `i` clears copy `i`; inactive entries are ignored by the generated register loop. |
 | `PARA_ASYNCHRONOUS=0` | Register clock is the selected bus clock | The clear must meet that clock's setup and hold requirements. |
 | `PARA_ASYNCHRONOUS=1` | Register clock is `i_clk_reg` | The integrator must provide the clear in the `i_clk_reg` domain; the generator does not synchronize it. |
 
@@ -2928,14 +2928,14 @@ The priority for a stored `wo` field is: active-low asynchronous reset loads the
 
 | ID | Requirement | Source | Verification method | Status |
 |---|---|---|---|---|
-| REQ-WOC-001 | The generator shall emit `i_hw_clear_<register>_<field>` for each `wo` field; a parameterized bank shall use one clear bit per entry. | Generator 3.2 implementation | Generated-port inspection for scalar and parameterized registers; generator regression | Pass: 23/23 generator checks; scalar and banked ports simulated |
+| REQ-WOC-001 | The generator shall emit `i_hw_clr_<register>_<field>` for each `wo` field; a parameterized bank shall use one clear bit per entry. | Port prefix in 3.3; clear behavior introduced in 3.2 | Generated-port inspection for scalar and parameterized registers; generator regression | Pass: 23/23 generator checks; scalar and banked ports simulated |
 | REQ-WOC-002 | At a rising register-clock edge with clear asserted, the generated `wo` storage shall become zero, independent of byte strobes. | Generator 3.2 implementation | Directed simulation of partial and full-field clear | Pass: APB4 scalar and parameterized tests; AXI4-Lite/AHB-Lite scalar tests |
 | REQ-WOC-003 | Hardware clear shall take priority over a simultaneous software write; reset shall retain its existing priority over both. | Generator 3.2 implementation | Directed clear/write collision tests and existing reset tests | Pass: clear overrides partial writes on all three buses; reset behavior covered by the golden/protocol reset scenarios |
 | REQ-WOC-004 | The generator shall not add a synchronizer for the clear input; integration shall drive it synchronously to the generated register clock. | Generator 3.2 implementation | Port-domain review and CDC review at integration | RTL interface review pass; CDC review remains an integration task |
 
 #### C.22.3 Integration note
 
-For a functional zeroize operation, connect the zeroize control to every `i_hw_clear_` input for stored key fields. The clear ports are synchronous to the register clock and have priority over writes. The generator clears only the `wo` flops; clearing core key-schedule, pipeline, counter, or output state remains the responsibility of the AES integration.
+For a functional zeroize operation, connect the zeroize control to every `i_hw_clr_` input for stored key fields. The clear ports are synchronous to the register clock and have priority over writes. The generator clears only the `wo` flops; clearing core key-schedule, pipeline, counter, or output state remains the responsibility of the AES integration.
 
 ---
 
@@ -2958,6 +2958,7 @@ For a functional zeroize operation, connect the zeroize control to every `i_hw_c
 | 3.0 | 2026-11-04 | Added AXI4-Lite and AHB-Lite backends; configurable AXI outstanding modes/read-write depths; AXI/AHB write-lane policies; AHB endian modes; parameter-selected single-clock or dual-clock FIFO models; workbook examples; protocol testbench and regression. C.20 documents the implemented contract. |
 | 3.1 | 2026-11-05 | Added `wo` field generation: software writes update resettable storage and the hardware output, while bus reads return zero for those bits. C.21 specifies the behavior; the v3.2 regression suite exercises it. |
 | 3.2 | 2026-11-05 | Added active-high `i_hw_clear_<register>_<field>` inputs for `wo`; synchronous clear sets the stored field to zero and takes priority over software writes. C.22 defines timing, parameterized-bank behavior, and the register-clock-domain requirement. Generator, simulation, protocol, and >70% per-example coverage regressions pass; see `sim/results/coverage/`. CDC/RDC signoff remains open for integration. |
+| 3.3 | 2026-11-05 | Changed the combinational write mask from `reg_wmask` to the VLSIT `w_wmask` prefix and shortened `wo` clear ports from `i_hw_clear_` to `i_hw_clr_` so generated names fit the 30-character RTL limit. Transaction behavior is unchanged. Generator regression passed 23/23 checks; APB4 golden simulation passed nine clock configurations plus the event-sideband case; AXI4-Lite/AHB-Lite protocol regression passed eight lint configurations and eight simulations. APB4, AXI4-Lite and AHB-Lite each passed the strict >70% line/condition/toggle coverage gate. |
 
 ### D.2 Figure index
 

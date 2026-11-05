@@ -250,7 +250,7 @@ class axil_protocol:
         for name, width in (
             ("w_clk_reg", 1), ("w_rst_n_reg", 1), ("reg_addr", self.addr_wd),
             ("reg_wdata", self.data_wd), ("reg_wstrb", self.data_wd // 8),
-            ("reg_wmask", self.data_wd), ("w_rd_en", 1), ("w_wr_en", 1),
+            ("w_wmask", self.data_wd), ("w_rd_en", 1), ("w_wr_en", 1),
             ("w_rdata_nxt", self.data_wd), ("w_addr_mapped", 1),
             ("reg_axi_rr_read", 1), ("reg_axi_accept_read", 1),
             ("reg_rd_count", 4), ("reg_wr_count", 4),
@@ -456,7 +456,7 @@ class axil_protocol:
   end
   generate
     for (genvar gen_lane = 0; gen_lane < LPARA_STRB_W; gen_lane++) begin : gen_axi_wmask
-      assign reg_wmask[(gen_lane * 8) +: 8] = {8{reg_wstrb[gen_lane]}};
+      assign w_wmask[(gen_lane * 8) +: 8] = {8{reg_wstrb[gen_lane]}};
     end
   endgenerate
 '''
@@ -523,7 +523,7 @@ class ahblite_protocol:
         for name, width in (
             ("w_clk_reg", 1), ("w_rst_n_reg", 1), ("reg_addr", self.addr_wd),
             ("reg_wdata", self.data_wd), ("reg_wstrb", self.data_wd // 8),
-            ("reg_wmask", self.data_wd), ("w_rd_en", 1), ("w_wr_en", 1),
+            ("w_wmask", self.data_wd), ("w_rd_en", 1), ("w_wr_en", 1),
             ("w_rdata_nxt", self.data_wd), ("w_addr_mapped", 1),
             ("reg_ahb_haddr", self.addr_wd), ("reg_ahb_hwrite", 1),
             ("reg_ahb_hsize", 3), ("reg_ahb_state", 3),
@@ -737,7 +737,7 @@ class ahblite_protocol:
   assign w_ahb_rsp_w_data = {w_ahb_issue_resp, (w_rd_en ? w_rdata_nxt : '0)};
   generate
     for (genvar gen_lane = 0; gen_lane < LPARA_STRB_W; gen_lane++) begin : gen_ahb_wmask
-      assign reg_wmask[(gen_lane * 8) +: 8] = {8{reg_wstrb[gen_lane]}};
+      assign w_wmask[(gen_lane * 8) +: 8] = {8{reg_wstrb[gen_lane]}};
     end
   endgenerate
 '''

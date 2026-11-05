@@ -2,7 +2,7 @@
 
 ## English
 
-`CSR_Generation.py` v3.2 reads a register map from an Excel workbook and generates one synthesizable SystemVerilog CSR module. Each workbook sheet selects one bus interface.
+`CSR_Generation.py` v3.3 reads a register map from an Excel workbook and generates one synthesizable SystemVerilog CSR module. Each workbook sheet selects one bus interface.
 
 | Bus | Supported profile | Key options |
 |---|---|---|
@@ -18,7 +18,7 @@ For APB4, the optional `Register Event Sideband` setting defaults to `0` when om
 
 ### Write-only fields
 
-Use `wo` for a software-writable field whose value must not be returned by a bus read. The generator stores the written value, exposes it on `o_<register>_<field>` for the IP logic, and returns zero for those bit positions on APB4, AXI4-Lite, and AHB-Lite reads. It also generates an active-high `i_hw_clear_<register>_<field>` input. At a register-clock rising edge, clear sets the whole field to zero and has priority over a simultaneous software write; in asynchronous mode, the clear input must be synchronous to `i_clk_reg`. Other readable fields in a mixed register are unaffected. For example, an AES key wider than the 32-bit CSR data path must be split across multiple `wo` fields/registers, and AES zeroize must clear each key field through its hardware-clear input.
+Use `wo` for a software-writable field whose value must not be returned by a bus read. The generator stores the written value, exposes it on `o_<register>_<field>` for the IP logic, and returns zero for those bit positions on APB4, AXI4-Lite, and AHB-Lite reads. It also generates an active-high `i_hw_clr_<register>_<field>` input. At a register-clock rising edge, clear sets the whole field to zero and has priority over a simultaneous software write; in asynchronous mode, the clear input must be synchronous to `i_clk_reg`. Other readable fields in a mixed register are unaffected. For example, an AES key wider than the 32-bit CSR data path must be split across multiple `wo` fields/registers, and AES zeroize must clear each key field through its hardware-clear input.
 
 ### Generate
 
@@ -48,7 +48,7 @@ The root [`CSR_GOLDEN_FORMAT.xlsx`](CSR_GOLDEN_FORMAT.xlsx) contains the complet
 
 ## Tiếng Việt
 
-`CSR_Generation.py` phiên bản 3.2 đọc bản đồ thanh ghi từ workbook Excel và sinh một module CSR SystemVerilog có thể tổng hợp. Mỗi sheet chọn một giao diện bus.
+`CSR_Generation.py` phiên bản 3.3 đọc bản đồ thanh ghi từ workbook Excel và sinh một module CSR SystemVerilog có thể tổng hợp. Mỗi sheet chọn một giao diện bus.
 
 | Bus | Profile hỗ trợ | Tùy chọn chính |
 |---|---|---|
@@ -64,7 +64,7 @@ Với APB4, cấu hình tùy chọn `Register Event Sideband` mặc định bằ
 
 ### Field write-only
 
-Dùng `wo` cho field software ghi được nhưng không được trả lại khi bus đọc. Generator lưu giá trị đã ghi, đưa giá trị đó ra `o_<register>_<field>` cho logic IP, và trả 0 tại các bit này khi đọc qua APB4, AXI4-Lite hoặc AHB-Lite. Generator cũng tạo input active-high `i_hw_clear_<register>_<field>`. Ở cạnh lên của clock register, clear xóa toàn field về 0 và ưu tiên hơn software write đồng thời; ở chế độ bất đồng bộ, clear phải đồng bộ với `i_clk_reg`. Các field đọc được khác trong cùng register không bị ảnh hưởng. Ví dụ, key AES rộng hơn data path CSR 32 bit phải chia thành nhiều field/register `wo`; zeroize AES phải clear từng field key qua hardware-clear input tương ứng.
+Dùng `wo` cho field software ghi được nhưng không được trả lại khi bus đọc. Generator lưu giá trị đã ghi, đưa giá trị đó ra `o_<register>_<field>` cho logic IP, và trả 0 tại các bit này khi đọc qua APB4, AXI4-Lite hoặc AHB-Lite. Generator cũng tạo input active-high `i_hw_clr_<register>_<field>`. Ở cạnh lên của clock register, clear xóa toàn field về 0 và ưu tiên hơn software write đồng thời; ở chế độ bất đồng bộ, clear phải đồng bộ với `i_clk_reg`. Các field đọc được khác trong cùng register không bị ảnh hưởng. Ví dụ, key AES rộng hơn data path CSR 32 bit phải chia thành nhiều field/register `wo`; zeroize AES phải clear từng field key qua hardware-clear input tương ứng.
 
 ### Sinh RTL
 

@@ -30,7 +30,7 @@ module tb_axil #(
   wire [1:0] o_axi_rresp;
   wire [31:0] o_data_value;
   wire [31:0] o_key_data;
-  logic i_hw_clear_key_data;
+  logic i_hw_clr_key_data;
   logic i_hw_wdata_engine_start;
   logic i_hw_we_engine_start;
   logic i_hw_wdata_engine_fault;
@@ -69,7 +69,7 @@ module tb_axil #(
     .i_axi_araddr(i_axi_araddr), .i_axi_arprot(i_axi_arprot),
     .o_axi_rvalid(o_axi_rvalid), .i_axi_rready(i_axi_rready),
     .o_axi_rdata(o_axi_rdata), .o_axi_rresp(o_axi_rresp), .o_data_value(o_data_value),
-    .o_key_data(o_key_data), .i_hw_clear_key_data(i_hw_clear_key_data)
+    .o_key_data(o_key_data), .i_hw_clr_key_data(i_hw_clr_key_data)
   );
 
   task automatic send_ar(input logic [15:0] address);
@@ -269,9 +269,9 @@ module tb_axil #(
       axi_write(16'h0400, 32'hA1B2C3D4, 4'b1111, 2'b00);
       if (o_key_data !== 32'hA1B2C3D4) $fatal(1, "example WO field did not store the key");
       axi_read(16'h0400, 2'b00, 32'h00000000);
-      i_hw_clear_key_data = 1'b1;
+      i_hw_clr_key_data = 1'b1;
       axi_write(16'h0400, 32'hFFFFFFFF, 4'b0001, 2'b00);
-      i_hw_clear_key_data = 1'b0;
+      i_hw_clr_key_data = 1'b0;
       if (o_key_data !== 32'h00000000) $fatal(1, "example WO clear did not override write");
       axi_write(16'h0400, 32'h55667788, 4'b1111, 2'b00);
       if (o_key_data !== 32'h55667788) $fatal(1, "example WO write after clear failed");
@@ -299,7 +299,7 @@ module tb_axil #(
     i_axi_araddr = '0;
     i_axi_arprot = '0;
     i_axi_rready = 1'b0;
-    i_hw_clear_key_data = 1'b0;
+    i_hw_clr_key_data = 1'b0;
     i_hw_wdata_engine_start = 1'b0;
     i_hw_we_engine_start = 1'b0;
     i_hw_wdata_engine_fault = 1'b0;
@@ -343,9 +343,9 @@ module tb_axil #(
     axi_read(16'h0010, 2'b00, 32'h00000000);
     axi_write(16'h0010, 32'h0000EE00, 4'b0010, 2'b00);
     if (o_key_data !== 32'hA1B2EED4) $fatal(1, "WO WSTRB did not update selected byte lane");
-    i_hw_clear_key_data = 1'b1;
+    i_hw_clr_key_data = 1'b1;
     axi_write(16'h0010, 32'hFFFFFFFF, 4'b0001, 2'b00);
-    i_hw_clear_key_data = 1'b0;
+    i_hw_clr_key_data = 1'b0;
     if (o_key_data !== 32'h00000000) $fatal(1, "WO hardware clear did not override concurrent software write");
     repeat (2) @(posedge i_clk_axi);
     if (o_key_data !== 32'h00000000) $fatal(1, "WO field changed after clear was released");

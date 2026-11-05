@@ -49,9 +49,9 @@ module tb_csr_golden;
   wire [31:0] o_mode_flat;
   wire [39:0] o_f_flat;
   wire [31:0] o_key_data;
-  reg i_hw_clear_key_data = 1'b0;
+  reg i_hw_clr_key_data = 1'b0;
   wire [MC-1:0][14:0] o_monitor_key_fragment;
-  reg [MC-1:0] i_hw_clear_monitor_key_fragment = '0;
+  reg [MC-1:0] i_hw_clr_monitor_key_fragment = '0;
 
   wire [MC-1:0][7:0] mon_ro;
   wire [MC-1:0][3:0] mon_thr;
@@ -116,8 +116,8 @@ module tb_csr_golden;
     .o_monitor_pending(mon_o2), .i_hw_wdata_monitor_pending(mon_wd2), .i_hw_we_monitor_pending(mon_we2),
     .o_monitor_overflow(mon_o3), .i_hw_wdata_monitor_overflow(mon_wd3), .i_hw_we_monitor_overflow(mon_we3),
     .o_monitor_match(mon_o4), .i_hw_wdata_monitor_match(mon_wd4), .i_hw_we_monitor_match(mon_we4),
-    .o_monitor_key_fragment(o_monitor_key_fragment), .i_hw_clear_monitor_key_fragment(i_hw_clear_monitor_key_fragment),
-    .o_key_data(o_key_data), .i_hw_clear_key_data(i_hw_clear_key_data)
+    .o_monitor_key_fragment(o_monitor_key_fragment), .i_hw_clr_monitor_key_fragment(i_hw_clr_monitor_key_fragment),
+    .o_key_data(o_key_data), .i_hw_clr_key_data(i_hw_clr_key_data)
 `ifdef CSR_EVENT_SIDEBAND
     , .o_reg_rd_en(reg_rd_en), .o_reg_rd_addr(reg_rd_addr)
     , .o_reg_wr_en(reg_wr_en), .o_reg_wr_addr(reg_wr_addr)
@@ -405,8 +405,8 @@ module tb_csr_golden;
       psel = 0; penable = 0; chain = 0;
       hw_we_flat = 0; hw_wd_flat = 0; ro_flat = 0;
       arm_wr = 0; arm_rd = 0; hw_clr = 0;
-      i_hw_clear_key_data = 1'b0;
-      i_hw_clear_monitor_key_fragment = '0;
+      i_hw_clr_key_data = 1'b0;
+      i_hw_clr_monitor_key_fragment = '0;
       repeat (4) @(posedge clk_apb);
       repeat (4) @(posedge clk_reg);
       #1;
@@ -462,12 +462,12 @@ module tb_csr_golden;
       chk(last_err === 1'b0 && o_key_data === 32'hA1B2C3D4, "wo: software write is stored for hardware");
       apb(1'b0, 16'h0400, 32'h0, 4'hF, 3'b000, 1'b0);
       chk(last_err === 1'b0 && last_rdata === 32'h0, "wo: software read returns zero");
-      i_hw_clear_key_data = 1'b1;
+      i_hw_clr_key_data = 1'b1;
       slverr_en = 1'b0;
       apb(1'b1, 16'h0400, 32'hFFFFFFFF, 4'h1, 3'b000, 1'b0);
       chk(last_err === 1'b0 && o_key_data === 32'h0,
           "wo: hardware clear wins over simultaneous partial software write");
-      i_hw_clear_key_data = 1'b0;
+      i_hw_clr_key_data = 1'b0;
       slverr_en = 1'b1;
       apb(1'b1, 16'h0400, 32'h55667788, 4'hF, 3'b000, 1'b0);
       chk(o_key_data === 32'h55667788, "wo: software write works after clear release");
@@ -482,7 +482,7 @@ module tb_csr_golden;
     integer a, b;
     begin
       slverr_en = 1'b1;
-      i_hw_clear_monitor_key_fragment = '0;
+      i_hw_clr_monitor_key_fragment = '0;
       for (a = 0; a < MC; a = a + 1) begin
         apb(1'b1, iaddr(4 + a), 32'h00005555 + a, 4'hF, 3'b000, 1'b0);
         chk(last_err === 1'b0 && o_monitor_key_fragment[a] === (15'h5555 + a),
@@ -490,8 +490,8 @@ module tb_csr_golden;
       end
       for (a = 0; a < MC; a = a + 1) begin
         @(negedge clk_r);
-        i_hw_clear_monitor_key_fragment = '0;
-        i_hw_clear_monitor_key_fragment[a] = 1'b1;
+        i_hw_clr_monitor_key_fragment = '0;
+        i_hw_clr_monitor_key_fragment[a] = 1'b1;
         @(posedge clk_r); #1;
         for (b = 0; b < MC; b = b + 1) begin
           chk(o_monitor_key_fragment[b] === ((b <= a) ? 15'h0 : (15'h5555 + b)),
@@ -500,13 +500,13 @@ module tb_csr_golden;
         end
       end
       @(negedge clk_r);
-      i_hw_clear_monitor_key_fragment = '0;
-      i_hw_clear_monitor_key_fragment[0] = 1'b1;
+      i_hw_clr_monitor_key_fragment = '0;
+      i_hw_clr_monitor_key_fragment[0] = 1'b1;
       slverr_en = 1'b0;
       apb(1'b1, iaddr(4), 32'h00007FFF, 4'h1, 3'b000, 1'b0);
       chk(last_err === 1'b0 && o_monitor_key_fragment[0] === 15'h0,
           "parameterized wo: clear overrides partial software write");
-      i_hw_clear_monitor_key_fragment = '0;
+      i_hw_clr_monitor_key_fragment = '0;
       slverr_en = 1'b1;
       for (a = 0; a < MC; a = a + 1) begin
         apb(1'b0, iaddr(4 + a), 32'h0, 4'hF, 3'b000, 1'b0);

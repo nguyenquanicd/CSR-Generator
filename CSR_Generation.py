@@ -4,6 +4,7 @@
 # Function: CSR Generation Tool
 # Page: VLSI Technology
 #
+# Version 3.3: use w_ for the combinational mask and i_hw_clr_ for shorter wo-clear ports; behavior is unchanged.
 # Version 3.2: add a hardware-clear input for write-only (wo) fields; clear overrides a write.
 # Version 3.1: add the write-only (wo) field type: software writes are stored and exposed
 #   to hardware, while software reads return zero.
@@ -34,7 +35,7 @@ from datetime import date, datetime
 from CSR_Protocol_Generation import (ASYNC_FIFO_MODEL, ASYNC_FIFO_MODULE, SYNC_FIFO_MODEL,
                                     SYNC_FIFO_MODULE, ahblite_protocol, axil_protocol)
 
-VERSION = "3.2"
+VERSION = "3.3"
 RSVD_KEY = 'reserved'
 VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c', 'wo'}
 FLOW_NAME = "VLSIT RTL Generator AI Automation Flow"
@@ -172,7 +173,7 @@ class register:
             elif b.type in {'rw', 'wo'}:
                 self.port_list.append(port(f"o_{n}_{b.name}", "output", b.width))
                 if b.type == 'wo':
-                    self.port_list.append(port(f"i_hw_clear_{n}_{b.name}", "input", 1))
+                    self.port_list.append(port(f"i_hw_clr_{n}_{b.name}", "input", 1))
                 self.logic_list.append(port(f"reg_{n}_{b.name}", "logic", b.width))
                 self.logic_list.append(port(f"w_{n}_{b.name}_nxt", "logic", b.width))
             elif b.type in {'rwi', 'w1c', 'w0c', 'w2c', 'r2c'}:
@@ -245,12 +246,12 @@ class bit:
         r = self.reg_group
         nxt = f"w_{r}_{self.name}_nxt"
         cur = f"reg_{r}_{self.name}"
-        mask = f"reg_wmask{self.field}"
+        mask = f"w_wmask{self.field}"
         sw_we = f"(w_we_{r} & (|{mask}))"
         if self.type == 'wo':
             self.rtl += f'''
   // {r}_{self.name} next value (wo): hardware clear overrides software writes.
-  assign {nxt} = i_hw_clear_{r}_{self.name} ? '0
+  assign {nxt} = i_hw_clr_{r}_{self.name} ? '0
                : {sw_we} ? ((reg_wdata{self.field} & {mask}) | ({cur} & ~{mask}))
                : {cur};
 '''
@@ -341,7 +342,7 @@ class parameterized_register:
             elif b.type != 'ro':
                 self.port_list.append(port(f"o_{n}_{b.name}", "output", b.width * self.count_default, width_text))
                 if b.type == 'wo':
-                    self.port_list.append(port(f"i_hw_clear_{n}_{b.name}", "input", self.count_default,
+                    self.port_list.append(port(f"i_hw_clr_{n}_{b.name}", "input", self.count_default,
                                                f"[{self.count_parameter}-1:0]"))
                 elif b.type in {'rwi', 'w1c', 'w0c', 'w2c', 'r2c'}:
                     self.port_list.append(port(f"i_hw_wdata_{n}_{b.name}", "input", b.width * self.count_default, width_text))
@@ -390,10 +391,10 @@ class parameterized_register:
                 if b.type != 'wo':
                     value_part += f"      w_{n}_value[gen_idx]{b.field} = {cur};\n"
                 sw_we = f"w_we_{n}[gen_idx]"
-                mask = f"reg_wmask{b.field}"
+                mask = f"w_wmask{b.field}"
                 sw_field_we = f"({sw_we} & (|{mask}))"
                 if b.type == 'wo':
-                    expr = (f"i_hw_clear_{n}_{b.name}[gen_idx] ? '0 : "
+                    expr = (f"i_hw_clr_{n}_{b.name}[gen_idx] ? '0 : "
                             f"({sw_field_we} ? ((reg_wdata{b.field} & {mask}) | ({cur} & ~{mask})) : {cur})")
                 elif b.type == 'rw':
                     expr = f"{sw_field_we} ? ((reg_wdata{b.field} & {mask}) | ({cur} & ~{mask})) : {cur}"
@@ -478,7 +479,7 @@ class apb_protocol:
         L.append(port("reg_addr", "logic", self.addr_wd, "[LPARA_ADDR_W-1:0]"))
         L.append(port("reg_wdata", "logic", self.data_wd, "[LPARA_DATA_W-1:0]"))
         L.append(port("reg_wstrb", "logic", self.data_wd // 8, "[LPARA_STRB_W-1:0]"))
-        L.append(port("reg_wmask", "logic", self.data_wd, "[LPARA_DATA_W-1:0]"))
+        L.append(port("w_wmask", "logic", self.data_wd, "[LPARA_DATA_W-1:0]"))
         L.append(port("reg_slverr", "logic", 1))
         L.append(port("w_rd_en", "logic", 1))
         L.append(port("w_wr_en", "logic", 1))
@@ -530,7 +531,7 @@ class apb_protocol:
   end
   generate
     for (genvar gen_lane = 0; gen_lane < LPARA_STRB_W; gen_lane++) begin : gen_apb_wmask
-      assign reg_wmask[(gen_lane * 8) +: 8] = {{8{{reg_wstrb[gen_lane]}}}};
+      assign w_wmask[(gen_lane * 8) +: 8] = {{8{{reg_wstrb[gen_lane]}}}};
     end
   endgenerate
 
