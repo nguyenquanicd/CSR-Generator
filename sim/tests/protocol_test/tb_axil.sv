@@ -2,7 +2,8 @@
 
 module tb_axil #(
   parameter logic [31:0] TEST_MODE = 32'd2,
-  parameter logic [31:0] TEST_ASYNC = 32'd0
+  parameter logic [31:0] TEST_ASYNC = 32'd0,
+  parameter logic [31:0] TEST_EXAMPLE = 32'd0
 );
   logic i_clk_axi;
   logic i_clk_reg;
@@ -28,6 +29,18 @@ module tb_axil #(
   wire [31:0] o_axi_rdata;
   wire [1:0] o_axi_rresp;
   wire [31:0] o_data_value;
+  wire [31:0] o_key_data;
+  logic i_hw_clear_key_data;
+  logic i_hw_wdata_engine_start;
+  logic i_hw_we_engine_start;
+  logic i_hw_wdata_engine_fault;
+  logic i_hw_we_engine_fault;
+  logic i_hw_wdata_engine_pending;
+  logic i_hw_we_engine_pending;
+  logic i_hw_wdata_engine_overflow;
+  logic i_hw_we_engine_overflow;
+  logic i_hw_wdata_engine_done;
+  logic i_hw_we_engine_done;
   integer test_count;
 
   initial begin
@@ -55,7 +68,8 @@ module tb_axil #(
     .i_axi_arvalid(i_axi_arvalid), .o_axi_arready(o_axi_arready),
     .i_axi_araddr(i_axi_araddr), .i_axi_arprot(i_axi_arprot),
     .o_axi_rvalid(o_axi_rvalid), .i_axi_rready(i_axi_rready),
-    .o_axi_rdata(o_axi_rdata), .o_axi_rresp(o_axi_rresp), .o_data_value(o_data_value)
+    .o_axi_rdata(o_axi_rdata), .o_axi_rresp(o_axi_rresp), .o_data_value(o_data_value),
+    .o_key_data(o_key_data), .i_hw_clear_key_data(i_hw_clear_key_data)
   );
 
   task automatic send_ar(input logic [15:0] address);
@@ -204,6 +218,71 @@ module tb_axil #(
     end
   endtask
 
+  task automatic run_example_map;
+    begin
+      axi_read(16'h0000, 2'b00, 32'h12000000);
+      axi_write(16'h0000, 32'h00B80000, 4'b1111, 2'b00);
+      axi_read(16'h0000, 2'b00, 32'h12B80000);
+
+      @(negedge i_clk_axi);
+      i_hw_wdata_engine_start = 1'b1;
+      i_hw_we_engine_start = 1'b1;
+      i_hw_wdata_engine_fault = 1'b1;
+      i_hw_we_engine_fault = 1'b1;
+      i_hw_wdata_engine_pending = 1'b1;
+      i_hw_we_engine_pending = 1'b1;
+      i_hw_wdata_engine_overflow = 1'b1;
+      i_hw_we_engine_overflow = 1'b1;
+      i_hw_wdata_engine_done = 1'b1;
+      i_hw_we_engine_done = 1'b1;
+      @(posedge i_clk_axi);
+      @(negedge i_clk_axi);
+      i_hw_we_engine_start = 1'b0;
+      i_hw_we_engine_fault = 1'b0;
+      i_hw_we_engine_pending = 1'b0;
+      i_hw_we_engine_overflow = 1'b0;
+      i_hw_we_engine_done = 1'b0;
+      axi_read(16'h0000, 2'b00, 32'h12BF8000);
+      axi_read(16'h0000, 2'b00, 32'h12BF0000);
+      axi_write(16'h0000, 32'h00000000, 4'b1111, 2'b00);
+      axi_read(16'h0000, 2'b00, 32'h12040000);
+      axi_write(16'h0000, 32'h00040000, 4'b1111, 2'b00);
+      axi_read(16'h0000, 2'b00, 32'h12000000);
+
+      @(negedge i_clk_axi);
+      i_hw_wdata_engine_pending = 1'b1;
+      i_hw_we_engine_pending = 1'b1;
+      @(posedge i_clk_axi);
+      @(negedge i_clk_axi);
+      i_hw_we_engine_pending = 1'b0;
+      axi_write(16'h0000, 32'h00020000, 4'b1111, 2'b00);
+      axi_read(16'h0000, 2'b00, 32'h12020000);
+
+      axi_read(16'h0100, 2'b00, 32'h34000000);
+      axi_write(16'h0100, 32'h00A80000, 4'b1111, 2'b00);
+      axi_read(16'h0100, 2'b00, 32'h34A80000);
+      axi_read(16'h0200, 2'b00, 32'h56000000);
+      axi_write(16'h0200, 32'h00580000, 4'b1111, 2'b00);
+      axi_read(16'h0200, 2'b00, 32'h56580000);
+
+      axi_read(16'h0400, 2'b00, 32'h00000000);
+      axi_write(16'h0400, 32'hA1B2C3D4, 4'b1111, 2'b00);
+      if (o_key_data !== 32'hA1B2C3D4) $fatal(1, "example WO field did not store the key");
+      axi_read(16'h0400, 2'b00, 32'h00000000);
+      i_hw_clear_key_data = 1'b1;
+      axi_write(16'h0400, 32'hFFFFFFFF, 4'b0001, 2'b00);
+      i_hw_clear_key_data = 1'b0;
+      if (o_key_data !== 32'h00000000) $fatal(1, "example WO clear did not override write");
+      axi_write(16'h0400, 32'h55667788, 4'b1111, 2'b00);
+      if (o_key_data !== 32'h55667788) $fatal(1, "example WO write after clear failed");
+      axi_read(16'h0400, 2'b00, 32'h00000000);
+
+      axi_write(16'h0002, 32'h11111111, 4'b1111, 2'b10);
+      axi_read(16'h0300, 2'b11, 32'h00000000);
+      check_full_queued_limit();
+    end
+  endtask
+
   integer cycles;
   logic [31:0] old_value;
   initial begin
@@ -220,12 +299,29 @@ module tb_axil #(
     i_axi_araddr = '0;
     i_axi_arprot = '0;
     i_axi_rready = 1'b0;
+    i_hw_clear_key_data = 1'b0;
+    i_hw_wdata_engine_start = 1'b0;
+    i_hw_we_engine_start = 1'b0;
+    i_hw_wdata_engine_fault = 1'b0;
+    i_hw_we_engine_fault = 1'b0;
+    i_hw_wdata_engine_pending = 1'b0;
+    i_hw_we_engine_pending = 1'b0;
+    i_hw_wdata_engine_overflow = 1'b0;
+    i_hw_we_engine_overflow = 1'b0;
+    i_hw_wdata_engine_done = 1'b0;
+    i_hw_we_engine_done = 1'b0;
     test_count = 0;
     repeat (5) @(negedge i_clk_axi);
     i_rst_n_axi = 1'b1;
     repeat (2) @(negedge i_clk_reg);
     i_rst_n_reg = 1'b1;
     repeat (10) @(posedge i_clk_axi);
+
+    if (TEST_EXAMPLE != 32'd0) begin
+      run_example_map();
+      $display("PASS AXIL example map: full field access, mapped/unmapped, and WO hardware clear");
+      $finish;
+    end
 
     axi_read(16'h0000, 2'b00, 32'h12345678);
     test_count = test_count + 1;
@@ -240,6 +336,24 @@ module tb_axil #(
     axi_read(16'h0000, 2'b00, 32'hAABBEEDD);
     test_count = test_count + 1;
     $display("PASS AXIL case: WSTRB updates only the selected byte lane");
+
+    axi_read(16'h0010, 2'b00, 32'h00000000);
+    axi_write(16'h0010, 32'hA1B2C3D4, 4'b1111, 2'b00);
+    if (o_key_data !== 32'hA1B2C3D4) $fatal(1, "WO storage did not capture software write");
+    axi_read(16'h0010, 2'b00, 32'h00000000);
+    axi_write(16'h0010, 32'h0000EE00, 4'b0010, 2'b00);
+    if (o_key_data !== 32'hA1B2EED4) $fatal(1, "WO WSTRB did not update selected byte lane");
+    i_hw_clear_key_data = 1'b1;
+    axi_write(16'h0010, 32'hFFFFFFFF, 4'b0001, 2'b00);
+    i_hw_clear_key_data = 1'b0;
+    if (o_key_data !== 32'h00000000) $fatal(1, "WO hardware clear did not override concurrent software write");
+    repeat (2) @(posedge i_clk_axi);
+    if (o_key_data !== 32'h00000000) $fatal(1, "WO field changed after clear was released");
+    axi_write(16'h0010, 32'h55667788, 4'b1111, 2'b00);
+    if (o_key_data !== 32'h55667788) $fatal(1, "WO field did not accept a write after clear release");
+    axi_read(16'h0010, 2'b00, 32'h00000000);
+    test_count = test_count + 1;
+    $display("PASS AXIL case: WO read-zero, WSTRB, storage, clear priority, and post-clear write");
 
     axi_write(16'h0002, 32'h11111111, 4'b1111, 2'b10);
     axi_read(16'h0004, 2'b11, 32'h00000000);

@@ -22,9 +22,12 @@ The APB4 golden-map simulation is in [`sim/tests/golden_test/`](../sim/tests/gol
 
 The APB4 example enables `Register Event Sideband=1`. It adds read/write event pulses and the corresponding register address outputs. The APB4 simulation checks mapped and unmapped reads, mapped writes, and suppression for invalid or unmapped writes.
 
+Each protocol example includes a scalar `wo` key field with a hardware-clear input. The tests check software read-as-zero, stored writes, clear priority over a simultaneous write, and a write after clear. The coverage runner requires each example profile to exceed 70% line, expression-based condition, and toggle coverage; reports and raw simulator data are saved under `sim/results/coverage/run_<timestamp>/`.
+
 ```bash
 python sim/tests/golden_test/run_golden_test.py
 python sim/tests/protocol_test/run_protocol_test.py
+python sim/tests/coverage_test/run_coverage_test.py
 ```
 
 The golden runner uses Icarus/vvp when available and falls back to a direct Verilator/g++ build if Icarus compilation or simulation fails. The protocol runner uses Verilator and falls back to direct g++ compilation if Verilator cannot run `make`. The fallback needs a compatible C++ toolchain. Add `--mutants` to the golden command to run injected-fault checks. Each `RTL/filelist.f` lists the sources for its example.
@@ -51,9 +54,12 @@ Mô phỏng golden-map APB4 nằm trong [`sim/tests/golden_test/`](../sim/tests/
 
 Ví dụ APB4 bật `Register Event Sideband=1`, sinh các xung read/write event và địa chỉ thanh ghi tương ứng. Mô phỏng APB4 kiểm tra read đã ánh xạ/chưa ánh xạ, write đã ánh xạ và việc không phát event cho write sai hoặc chưa ánh xạ.
 
+Mỗi ví dụ giao thức có field key `wo` dạng scalar cùng input hardware-clear. Test kiểm tra read trả 0, lưu giá trị write, clear ưu tiên hơn write đồng thời và write lại sau clear. Coverage runner yêu cầu mỗi cấu hình ví dụ đạt trên 70% line, condition dựa trên expression và toggle coverage; report cùng dữ liệu mô phỏng thô được lưu trong `sim/results/coverage/run_<timestamp>/`.
+
 ```bash
 python sim/tests/golden_test/run_golden_test.py
 python sim/tests/protocol_test/run_protocol_test.py
+python sim/tests/coverage_test/run_coverage_test.py
 ```
 
 Golden runner dùng Icarus/vvp nếu biên dịch và mô phỏng được; nếu một trong hai bước lỗi, runner chuyển sang build trực tiếp Verilator/g++. Protocol runner dùng Verilator và chuyển sang build trực tiếp bằng g++ khi không chạy được `make`. Chế độ dự phòng cần C++ toolchain tương thích. Thêm `--mutants` vào lệnh golden để chạy kiểm tra fault injection. Mỗi `RTL/filelist.f` liệt kê các source của ví dụ tương ứng.

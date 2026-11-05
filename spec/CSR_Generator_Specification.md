@@ -4,8 +4,8 @@
 |---|---|
 | Document | Specification of APB-CSR-Generator: script flow, workbook reference, user guide, normative design specification, implementation history |
 | Product | `CSR_Generation.py`, a generator of APB4, AXI4-Lite, or AHB-Lite CSR modules from an Excel register map |
-| Generator version described | 3.0 current protocol implementation; Parts A/B retain the APB4 2.4 baseline; C.1–C.19 are unimplemented attribute proposals |
-| Document date | 2026-11-04 |
+| Generator version described | 3.2; Part B retains the APB4 2.4 baseline, Part C records the 3.0 bus backends, 3.1 `wo` field, and 3.2 `wo` hardware clear |
+| Document date | 2026-11-05 |
 | Language | English; Vietnamese summaries and appendices where marked |
 | Replaces | `README.md` (technical content), `APB_CSR_Generator_Design_Specification.md`, `Repeated_Register_Generation_Specification.md`, `CSR_Attribute_Extension_Specification.md` |
 
@@ -42,7 +42,7 @@
   - [B.21 Glossary](#b21-glossary)
   - [B.22 References used to shape this template](#b22-references-used-to-shape-this-template)
   - [B.23 Repeated register generation](#b23-repeated-register-generation)
-- [Part C. Extension research and implemented multi-protocol support (3.0)](#part-c-extension-research-and-implemented-multi-protocol-support-generator-30)
+- [Part C. Extension research and implemented multi-protocol support (3.2)](#part-c-extension-research-and-implemented-multi-protocol-support-generator-32)
   - [C.0 Tóm tắt bằng tiếng Việt](#c0-tóm-tắt-bằng-tiếng-việt)
   - [C.1 Purpose and scope](#c1-purpose-and-scope)
   - [C.2 Research summary](#c2-research-summary)
@@ -64,6 +64,8 @@
   - [C.18 Appendix: giải thích chi tiết từng đề xuất (tiếng Việt)](#c18-appendix-giải-thích-chi-tiết-từng-đề-xuất-tiếng-việt)
   - [C.19 Logic diagrams of the planned options](#c19-logic-diagrams-of-the-planned-options)
   - [C.20 Implemented multi-protocol CSR interface generation](#c20-multi-protocol-csr-interface-generation)
+  - [C.21 Implemented write-only field support](#c21-implemented-write-only-field-support)
+  - [C.22 Hardware clear for write-only fields](#c22-hardware-clear-for-write-only-fields)
 - [Part D. Appendices](#part-d-appendices)
   - [D.1 Revision history](#d1-revision-history)
   - [D.2 Figure index](#d2-figure-index)
@@ -90,8 +92,10 @@ This document is the single specification of the generator. It replaces the form
 |---|---|---|
 | A | Overview, script flow, workbook and option reference, user guide | Everyone; start with A.6 to use the tool |
 | B | Normative design specification of the APB4 2.4 baseline | APB4 users and maintainers |
-| C.1–C.19 | Historical register-attribute research and proposals; not implemented | Future planning only |
+| C.1–C.19 | Historical register-attribute research and proposals; `wo` is implemented in 3.1/C.21 and its clear input in 3.2/C.22 | Future planning, except for the implemented `wo` features |
 | C.20 | Normative specification of implemented generator 3.0 AXI4-Lite/AHB-Lite support | AXI4-Lite/AHB-Lite users and maintainers |
+| C.21 | Normative specification of implemented 3.1 write-only field support across generated buses | CSR map authors and IP integrators |
+| C.22 | Normative specification of implemented 3.2 hardware clear for write-only fields | CSR map authors and IP integrators |
 | D | Revision history, figure index, repository layout | Maintainers |
 
 Status legend used in Part A: **[implemented]** the behavior exists in the current source; **[proposal]** the item remains unimplemented and is explicitly labeled as such.
@@ -100,9 +104,10 @@ Status legend used in Part A: **[implemented]** the behavior exists in the curre
 
 | Item | Value |
 |---|---|
-| Generator version | 3.0 (`VERSION` in `CSR_Generation.py`) |
+| Generator version | 3.2 (`VERSION` in `CSR_Generation.py`) |
 | RTL rule baseline | VLSIT RTL Design Rule v2 (naming, port layout, header, process labels) |
-| Verification | Generator regression and AXI4-Lite/AHB-Lite protocol simulation results are recorded in C.20.7; APB4 2.4 evidence remains in B.15.5 |
+| Existing verification evidence | Generator regression and AXI4-Lite/AHB-Lite protocol simulation results are recorded in C.20.7; APB4 2.4 evidence remains in B.15.5 |
+| Version 3.2 status | `wo` hardware-clear is generated and exercised on APB4, AXI4-Lite, and AHB-Lite; generator, golden-map, protocol, and coverage regressions pass (coverage results in `sim/results/coverage/`) |
 | Not done | CDC/RDC signoff, synthesis/area characterization, formal equivalence across versions |
 
 #### A.1.4 Reading the schematics
@@ -122,8 +127,8 @@ The figures of this part are gate-level schematics. Their cells are named after 
 | Feature | Description |
 |---|---|
 | Selectable CSR bus | One generated interface per sheet: APB4, AXI4-Lite, or AHB-Lite |
-| Field types | `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`, and `reserved` bits |
-| Hardware interface | Output per field; input per `ro` field; load enable and load data for `rwi`, `w1c`, `w0c`, `w2c`, `r2c` |
+| Field types | `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`, `wo`, and `reserved` bits |
+| Hardware interface | Output per stored field, including `wo`; input per `ro` field; `i_hw_clear_` input per `wo` field; load enable and load data for `rwi`, `w1c`, `w0c`, `w2c`, `r2c` |
 | Register replication | `NONE`, `FIXED` (N named copies), `PARAMETERIZED` (one bank with an elaboration count) |
 | Clock architecture | `PARA_ASYNCHRONOUS=0` uses the selected bus clock; `1` uses the separate register clock and protocol request/response FIFOs |
 | APB4 | SETUP/ACCESS phases, `PREADY`, `PSLVERR`, `PPROT`, `PSTRB`, and legacy access-check inputs |
@@ -256,7 +261,7 @@ A key matches when the label contains the words above.
 | B | `OFFSET` | register row | Byte address of the register; decimal or `0x` hexadecimal |
 | C | `BIT NAME` | field row | Field name; the name `reserved` marks unused bits |
 | D | `FIELD WIDTH` | field row | Bit range `[msb:lsb]` or `[bit]` |
-| E | `BIT TYPE` | field row | `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c` |
+| E | `BIT TYPE` | field row | `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`, `wo` |
 | F | `RESET VALUE` | field row (register row informational) | Reset value of the field, decimal or hexadecimal |
 | G | `DESCRIPTION` | both | Text; copied to `debug.json` |
 | H | `REPEAT MODE` | register row | `NONE` (or empty), `FIXED`, `PARAMETERIZED` |
@@ -264,7 +269,7 @@ A key matches when the label contains the words above.
 | J | `OFFSET STRIDE` | register row | Byte distance between copies |
 | K | `MAX COUNT` | register row | Largest legal count (`PARAMETERIZED` only) |
 
-Rules checked by the generator: every register has at least one field; field names are unique inside a register; a field has a name and a range; the type is one of the seven; addresses are aligned to the word size, fit the address width and do not overlap; generated register, group, parameter and localparam names are unique; identifiers are valid. A reset value that does not fit the field width is an error.
+Rules checked by the generator: every register has at least one field; field names are unique inside a register; a field has a name and a range; the type is one of the eight supported types; addresses are aligned to the word size, fit the address width and do not overlap; generated register, group, parameter and localparam names are unique; identifiers are valid. A reset value that does not fit the field width is an error.
 
 #### A.4.4 Naming limits
 
@@ -313,6 +318,7 @@ A field is one or more bits of a register. The type fixes what software and hard
 | `w0c` | stored value | a written 0 clears the bit | loads; hardware wins | `hw_we ? hw_wdata : (we ? wdata & Q : Q)` |
 | `w2c` | stored value | any write to the register clears the whole field | loads; hardware wins | `hw_we ? hw_wdata : (we ? 0 : Q)` |
 | `r2c` | value before the clear | ignored | loads; hardware wins | `hw_we ? hw_wdata : (rd ? 0 : Q)` |
+| `wo` | 0 | loads the written bits | reads `o_<reg>_<field>` | `we ? wdata : Q` |
 | `reserved` | 0 | ignored | none | no flop |
 
 Ports per type (`<reg>` and `<field>` from the workbook, `[W-1:0]` omitted for one bit):
@@ -321,9 +327,12 @@ Ports per type (`<reg>` and `<field>` from the workbook, `[W-1:0]` omitted for o
 |---|---|---|
 | `ro` | `i_<reg>_<field>` | none |
 | `rw` | none | `o_<reg>_<field>` |
+| `wo` | `i_hw_clear_<reg>_<field>` (3.2) | `o_<reg>_<field>` |
 | `rwi`, `w1c`, `w0c`, `w2c`, `r2c` | `i_hw_we_<reg>_<field>`, `i_hw_wdata_<reg>_<field>` | `o_<reg>_<field>` |
 
 A hardware load and a software access that meet in the same register-clock cycle are resolved by the order in the next-value column. For `rwi` the software write wins; for the four clear types the hardware load wins, so a new event is never lost (decision DEC-006).
+
+For `wo`, the software write updates a resettable field flop, but the read-data mux leaves the field bits at zero. The hardware output sees the stored value. Version 3.2 adds the synchronous clear input described in C.22; it does not add a hardware write-data or write-enable input.
 
 **`rw`: logic diagram.**
 
@@ -507,7 +516,7 @@ In CFG-ASYNC the value is first captured on the register clock at the read enabl
 
 #### A.5.11 Planned options [planned]
 
-The historical proposals in C.1–C.19 cover new field types, per-bit hardware set/clear, access pulses, locks, access levels, interrupt groups, counters, aliases, external windows, C header/UVM output and checks. Those proposals remain unimplemented. Protocol-specific strobe handling and AXI4-Lite/AHB-Lite generation are implemented and specified in C.20.
+The historical proposals in C.1–C.19 cover new field types, per-bit hardware set/clear, access pulses, locks, access levels, interrupt groups, counters, aliases, external windows, C header/UVM output and checks. Except for `wo` (implemented in 3.1 and specified in C.21), those proposals remain unimplemented. Protocol-specific strobe handling and AXI4-Lite/AHB-Lite generation are implemented and specified in C.20.
 
 ### A.6 User guide
 
@@ -645,7 +654,7 @@ python sim/tests/generator_test/run_generator_test.py      # tests of the tool i
 | `Data Width must be a byte multiple from 8 through 32 bits` | Wrong value | Use 8, 16, 24 or 32 |
 | `Protocol must be APB4, AXI4-Lite, or AHB-Lite` | `Protocol` value is unsupported | Select one of the supported protocol values in C.20.2 |
 | `<label> must be a valid SystemVerilog identifier` | Register or module name with illegal characters | Rename |
-| `unsupported bit type '<x>'; supported types: ...` | `BIT TYPE` outside the seven | Use one of `rw ro rwi w1c w0c w2c r2c` |
+| `unsupported bit type '<x>'; supported types: ...` | `BIT TYPE` outside the supported set | Use one of `rw ro rwi w1c w0c w2c r2c wo` |
 | `register <r> contains a field without a name or bit range` | Incomplete field row | Fill column C and D |
 | `register <r> has duplicate field name <f>` | Two fields with one name | Rename |
 | `register <r> must define at least one field` | A register row without field rows | Add fields |
@@ -748,7 +757,7 @@ This document specifies two things: the tool (Section B.10.2, tool operations TO
 |---|---|---|---|---|
 | FEAT-001 | Generation of the CSR module from a workbook sheet | Required | Always present | REQ-GEN-001 to REQ-GEN-010 |
 | FEAT-002 | APB4 Completer with PREADY wait state and PSLVERR | Required | Always present | REQ-IF-001, REQ-FUNC-001, REQ-FUNC-008 |
-| FEAT-003 | Field types rw, ro, rwi, w1c, w0c, w2c, and r2c at bit-field granularity | Required | Always present | REQ-IF-003, REQ-FUNC-002 to REQ-FUNC-007 |
+| FEAT-003 | Field types rw, ro, rwi, w1c, w0c, w2c, r2c, and wo at bit-field granularity | Required | Always present | REQ-IF-003, REQ-FUNC-002 to REQ-FUNC-007, REQ-WO-001 to REQ-WO-004 |
 | FEAT-004 | Access checks: protection, word alignment, full-strobe write | Optional | Runtime enable inputs `i_protect_en`, `i_slverr_en` | REQ-ERR-001 to REQ-ERR-005 |
 | FEAT-005 | Parameter-selected synchronous or asynchronous register access | Optional architecture | `PARA_ASYNCHRONOUS=0` or `1`; default comes from workbook cell Asynchronous | REQ-CLK-002, REQ-FUNC-009 |
 | FEAT-006 | Debug dump of the parsed workbook | Required | Always present | REQ-GEN-008 |
@@ -1109,7 +1118,7 @@ The input of the generator is a sheet of the VLSIT CSR Specification Template wo
 | Item | Specification |
 |---|---|
 | CSR workbook file | Supplied by the user of the generator; reference: `VLSIT_CSR_Specification_Template.xlsx` |
-| Bundled golden example | `CSR_GOLDEN_FORMAT.xlsx` (REF-007); demonstrates both clock defaults, all seven field types, and `NONE`, `FIXED`, and `PARAMETERIZED` groups |
+| Bundled golden example | `CSR_GOLDEN_FORMAT.xlsx` (REF-007); demonstrates both clock defaults, the previously implemented field types, and `NONE`, `FIXED`, and `PARAMETERIZED` groups; `wo` has no bundled workbook example yet |
 | Sheet used for this IP | Any valid sheet; `CSR` and `ASYNC_CSR` are conventional names. Each emits the same static-port RTL structure. |
 | Workbook revision / date | The revision of the template that REF-005 names |
 | CSR generator | APB-CSR-Generator, version 2.4 (`https://github.com/nguyenquanicd/APB-CSR-Generator`) |
@@ -1567,13 +1576,13 @@ A workbook without the new columns continues to generate one register per regist
 Workbook không có các cột mới vẫn sinh một thanh ghi trên mỗi dòng register. Interface module và register map hiện tại không thay đổi.
 
 
-## Part C. Extension research and implemented multi-protocol support (generator 3.0)
+## Part C. Extension research and implemented multi-protocol support (generator 3.2)
 
-Sections C.1–C.19 preserve the earlier research and proposal for additional register-field attributes; those attributes remain **unimplemented** unless already listed in Parts A/B. Section C.20 is the current normative specification for the implemented 3.0 AXI4-Lite and AHB-Lite backends. The earlier proposal text in C.20 has been replaced by the verified implementation contract. Section numbers inside Part C refer to Part C (written C.n); references to Part A and Part B are written with their letter.
+Sections C.1–C.19 preserve earlier research and proposals. The `wo` field type was implemented in generator 3.1 and is specified in C.21; its hardware clear was added in 3.2 and is specified in C.22. The other proposed attributes remain unimplemented. Section C.20 specifies the implemented 3.0 AXI4-Lite and AHB-Lite backends. Section numbers inside Part C refer to Part C (written C.n); references to Part A and Part B are written with their letter.
 
 ### C.0 Tóm tắt bằng tiếng Việt
 
-**Tình trạng hiện tại.** Generator 3.0 sinh giao diện APB4, AXI4-Lite hoặc AHB-Lite theo từng sheet. Hai backend mới dùng data 32 bit; AXI4-Lite có ba mode outstanding và độ sâu riêng cho read/write; AHB-Lite hỗ trợ truy cập nhỏ hơn word cùng ba quy tắc endian. Mục C.20 mô tả implementation đang có. Các thuộc tính field bổ sung liệt kê dưới đây là đề xuất lịch sử và chưa được triển khai.
+**Tình trạng hiện tại.** Generator 3.2 sinh giao diện APB4, AXI4-Lite hoặc AHB-Lite theo từng sheet; kiểu field `wo` và hardware-clear input được hỗ trợ trên cả ba bus. Hai backend AXI4-Lite/AHB-Lite dùng data 32 bit; AXI4-Lite có ba mode outstanding và độ sâu riêng cho read/write; AHB-Lite hỗ trợ truy cập nhỏ hơn word cùng ba quy tắc endian. Mục C.20 mô tả backend; C.21 mô tả `wo`; C.22 mô tả hardware clear. Các thuộc tính bổ sung khác vẫn là đề xuất lịch sử.
 
 **Mục tiêu của khảo sát trước đây.** Generator 2.4 có các kiểu field `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, `r2c`, một cách nạp phần cứng bằng `we`/`wdata`, kiểm tra APB qua các cổng tĩnh và chỉ sinh RTL. Các mục dưới đây khảo sát SystemRDL 2.0, IP-XACT, UVM RAL, OpenTitan `reggen`, tài liệu MCU, RISC-V và tài liệu an toàn chức năng để đề xuất mở rộng thuộc tính.
 
@@ -1581,7 +1590,7 @@ Sections C.1–C.19 preserve the earlier research and proposal for additional re
 
 | Ưu tiên | Thuộc tính | Vì sao cần |
 |---|---|---|
-| P1 | Kiểu mới `w1s`, `w1t`, `wo`, `pulse` (ghi 1 tạo xung, không lưu), `const` | Phần mềm MCU dùng rất nhiều bit "ghi 1 để kích hoạt" và "ghi 1 để set"; `pulse` không tốn flop; `const` bỏ cổng cho ID/version |
+| P1 | Kiểu mới `w1s`, `w1t`, `pulse` (ghi 1 tạo xung, không lưu), `const` | Phần mềm MCU dùng nhiều bit "ghi 1 để kích hoạt" và "ghi 1 để set"; `pulse` không cần field storage; `const` bỏ cổng cho ID/version |
 | P1 | `HW ACCESS` (`hro`, `hrw`, `hwo`, `none`) và nạp bằng `hwset`/`hwclr` từng bit | Trạng thái nhiều bit cần OR-in từng bit sự kiện; hiện chỉ nạp cả field nên mất sự kiện hoặc phải thêm logic ngoài |
 | P1 | Xung truy cập phần mềm `swrd`, `swwr`, `swmod` | Đọc FIFO (pop), ghi lệnh (start), DMA kick; không có xung này thì phải thêm logic giải mã địa chỉ bên ngoài |
 | P1 | `ACCESS LEVEL` theo thanh ghi (any / privileged / secure) và chính sách lỗi theo thanh ghi | Hiện chỉ có một cổng `i_protect_en` toàn cục; SoC cần bảo vệ riêng từng thanh ghi |
@@ -1824,7 +1833,7 @@ Rules:
 |---|---|---|---|---|---|---|
 | `w1s` | stored value | bits written 1 are set | yes | HW interface as `w1c` | `W1S` | `woset`, `sw=rw` |
 | `w1t` | stored value | bits written 1 toggle | yes | | `W1T` | no direct form |
-| `wo` | 0 | stored | yes | The value is visible only on `o_` | `WO` | `sw=w` |
+| `wo` | 0 | stored | yes | **Implemented in 3.1:** the value is visible on `o_`; **3.2:** `i_hw_clear_` synchronously clears the stored value; see C.21 and C.22 | `WO` | `sw=w` |
 | `pulse` | 0 | a 1 gives a one-cycle pulse on `o_` | none | No storage flop (one output pulse flop, REQ-IF-004); reads 0; width 1 or more (each bit its own pulse) | `WO` (user-defined for the model) | `singlepulse` |
 | `const` | the reset value | ignored | none | No port; the value comes from the `RESET VALUE` column | `RO` | `sw=r` with a constant |
 | `w0s` (P2) | stored value | bits written 0 are set | yes | | `W0S` | `woset` on inverted data |
@@ -2299,7 +2308,7 @@ A module `<module>_sva` with a `bind` statement and properties derived from the 
 | REQ-ATTR-001 | A workbook without the `ATTRIBUTES` column and without the new configuration keys shall generate RTL and `debug.json` identical to generator 2.4 except for the version and date | Compatibility | P1 | Regeneration diff of the golden workbook (TEST-ATTR-001) |
 | REQ-ATTR-002 | The generator shall parse the `ATTRIBUTES` grammar of Section C.4.1 and reject unknown keys, duplicates, wrong value kinds, and keys invalid for the type, each with a distinct code | Safety of the format | P1 | Negative workbooks (TEST-ATTR-002) |
 | REQ-ATTR-003 | `--check` shall run all validation without writing files and shall exit 1 on any error | Usability | P1 | TEST-ATTR-002 |
-| REQ-ATTR-004 | `w1s`, `w1t`, `wo`, `pulse`, `const` shall behave as Section C.5.1 | SRC-4, 6 | P1 | Directed simulation |
+| REQ-ATTR-004 | Proposed types `w1s`, `w1t`, `pulse`, and `const` shall behave as Section C.5.1 if implemented | SRC-4, 6 | P1 | Directed simulation |
 | REQ-ATTR-005 | `pulse` and `const` shall create no storage flop (a `pulse` field has one output pulse flop; `const` has none) | Area | P1 | Structural inspection |
 | REQ-ATTR-006 | `hw=` and `hwmode=` shall create the ports and behavior of Section C.5.2 | SRC-1, 2 | P1 | Directed simulation, port check |
 | REQ-ATTR-007 | With `hwmode=setclr` or `set`, a HW set and a HW clear on the same bit in the same cycle shall give 1 | SRC-1 | P1 | Directed simulation |
@@ -2395,7 +2404,7 @@ At least: every new type written and read; every priority pair in both orders; e
 
 | Release | Content | Exit criterion |
 |---|---|---|
-| 3.0 (P1) | Section C.4 grammar and `--check`; types `w1s`, `w1t`, `wo`, `pulse`, `const`; `hw`/`hwmode`; `swpulse`/`swmod`; `locked_by` lock; `level` and error policies; late error; `HONOR`; interrupt group; C header, RAL, volatile/test flags | TEST-ATTR-001 to 006, 009 to 012 pass; documentation and `golden` sheet updated |
+| 3.0 (P1, historical proposal) | Section C.4 grammar and `--check`; types `w1s`, `w1t`, `pulse`, `const`; `hw`/`hwmode`; `swpulse`/`swmod`; `locked_by` lock; `level` and error policies; late error; `HONOR`; interrupt group; C header, RAL, volatile/test flags | Not implemented; `wo` moved to the 3.1 implementation in C.21 |
 | 3.1 (P2) | `precedence`; counters; preload; wide registers; aliases; external windows; write-once; keyed write; legal values; soft reset; error registers; Markdown, SVD and IP-XACT export | TEST-ATTR-007 passes; SVA bind files decided (TBD-A06) |
 | 3.2 (P3) | Shadowed registers; parity and ECC; reset from a pin; `noreset`; optional multi-clock groups | TEST-ATTR-008 passes; a safety review of the integrity design |
 
@@ -2741,7 +2750,7 @@ The AXI4-Lite profile follows Arm IHI 0022H.c Part B1; the AHB-Lite profile foll
 | `AXI Read Outstanding Depth` | Integer `1`–`8` | Workbook default; used in `QUEUED` mode |
 | `AXI Write Outstanding Depth` | Integer `1`–`8` | Workbook default; used in `QUEUED` mode |
 | `AHB Endian` | `LITTLE`, `BE8`, `BE32` | Default `LITTLE`; AHB-Lite only |
-| `Register Event Sideband` | `0` or `1` | Default `0`; APB4 only. `1` adds `o_reg_rd_en`, `o_reg_rd_addr`, `o_reg_wr_en`, `o_reg_wr_addr`: the read event is an aligned APB read, the write event is a write to a mapped register with at least one software-writable field (`rw`, `rwi`, `w1c`, `w0c`, `w2c`); each address output is the captured address during its event and zero otherwise |
+| `Register Event Sideband` | `0` or `1` | Default `0`; APB4 only. `1` adds `o_reg_rd_en`, `o_reg_rd_addr`, `o_reg_wr_en`, `o_reg_wr_addr`: the read event is an aligned APB read, the write event is a write to a mapped register with at least one software-writable field (`rw`, `wo`, `rwi`, `w1c`, `w0c`, `w2c`); each address output is the captured address during its event and zero otherwise |
 
 The workbook records the selected settings for reproducible generation. AXI outstanding mode/depth, `PARA_ASYNCHRONOUS`, write-strobe mode and AHB endian are top-level RTL parameters and can be overridden at elaboration. AXI/AHB require 32-bit data even though APB4 retains the earlier width range.
 
@@ -2866,6 +2875,68 @@ The reported protocol matrix is the result of the runs listed above. Lint/elabor
 |---|---|---|
 | SRC-BUS-01 | Arm, *AMBA AXI and ACE Protocol Specification*, IHI 0022H.c, Part B1; [official Arm PDF](https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/IHI0022H_amba_axi_protocol_spec.pdf) | AXI4-Lite channels, strobes, subordinate response behavior |
 | SRC-BUS-02 | Arm, *AMBA AHB Protocol Specification*, IHI 0033C, Issue C; [official Arm specification](https://developer.arm.com/documentation/ihi0033/c/) and [official PDF](https://documentation-service.arm.com/static/6141bf0d674a052ae36ca811?token=) | Transfer acceptance, HSIZE, two-cycle ERROR, data buses, endianness §6.2 |
+
+### C.21 Implemented write-only field support
+
+Generator 3.1 accepts `wo` as a field type for APB4, AXI4-Lite, and AHB-Lite workbooks. The term *write-only* describes software access: software writes the field but bus reads return zero. The generated field remains stored and visible to the IP through an output port.
+
+#### C.21.1 Field behavior
+
+| Property | `wo` behavior |
+|---|---|
+| Software write | Accepted according to the selected bus profile and write-strobe policy. Enabled byte lanes update the field; disabled lanes retain their previous values. |
+| Software read | Returns zero at the `wo` bit positions. A mapped read does not raise an error solely because the register contains `wo` fields. |
+| Storage | Resettable field flops hold the last software-written value. The workbook reset value is applied on the generated CSR reset. |
+| Hardware interface | The generator emits `o_<register>_<field>` and no hardware write-data or write-enable inputs for `wo`. |
+| Mixed register | Readable fields retain their normal read behavior; only `wo` bit positions are forced to zero. |
+| Register event sideband | A mapped accepted write to a register containing `wo` qualifies as a software-writable register write event. |
+| Repeated register | `wo` behavior applies to each `FIXED` copy and each active `PARAMETERIZED` entry. |
+
+In generator 3.1, `wo` did not provide a hardware clear. Generator 3.2 adds an active-high `i_hw_clear_<register>_<field>` input; see C.22 for timing and priority. The output port is available to the IP logic; it is not a software readback path.
+
+The generator bus data width is at most 32 bits. A wider value, such as a 256-bit AES key, must be divided across multiple `wo` fields/registers. The AES wrapper defines their word order and assembly; this generator only emits the individual field outputs.
+
+#### C.21.2 Requirements
+
+| ID | Requirement | Source | Verification method | Status |
+|---|---|---|---|---|
+| REQ-WO-001 | The generator shall accept `wo` in the `BIT TYPE` column and preserve the workbook reset value in generated storage. | Generator 3.1 implementation | Directed simulation of reset and software writes | Pass in v3.2 regression: APB4, AXI4-Lite, and AHB-Lite |
+| REQ-WO-002 | A software write shall update only the byte lanes enabled by the selected bus policy; an accepted write shall contribute to `o_reg_wr_en` when the APB register-event sideband is enabled. | Generator 3.1 implementation; C.20 | Directed APB, AXI4-Lite, and AHB-Lite simulation | Pass: byte-strobe tests on all three buses; APB event-sideband regression passes |
+| REQ-WO-003 | A software read shall return zero in every `wo` bit position while preserving the read value of other fields in the same register. | Generator 3.1 implementation | Directed simulation of `wo`-only and mixed-field registers | Pass in v3.2 regression: read-zero and surrounding register-map tests on all three buses |
+| REQ-WO-004 | The generated RTL shall expose each stored `wo` field through `o_<register>_<field>` and shall not emit hardware write-data or write-enable inputs for that field. | Generator 3.1 implementation | Generated-port inspection and RTL rule check | Pass: generated-port checks in 23/23 generator regression checks |
+
+#### C.21.3 Integration status
+
+The canonical generator and workbook templates support `wo` and hardware clear. All three example projects were regenerated from their workbooks. The generator regression passes 23 checks; the APB4 golden-map regression passes the synchronous/asynchronous parameter matrix and event-sideband example; the AXI4-Lite/AHB-Lite protocol regression passes eight lint configurations and eight simulations. The explicit `wo` tests cover reset value, software storage, read-as-zero, byte-strobe writes, clear priority over simultaneous writes, post-clear writes, and per-entry clear behavior for a parameterized bank. CDC/RDC analysis is an integration task and has not been run.
+
+### C.22 Hardware clear for write-only fields
+
+Generator 3.2 extends `wo` with an active-high hardware-clear input. This input clears the stored field to zero on the generated register clock, including when a software write is accepted on the same edge. The clear is synchronous, clears the whole field regardless of write strobes, and does not change the `wo` read-as-zero behavior.
+
+#### C.22.1 Interface and timing
+
+| Configuration | Generated port | Behavior |
+|---|---|---|
+| One register or `FIXED` copy | `input logic i_hw_clear_<register>_<field>` | Sampled on the rising edge of the register clock; high clears the complete field to zero. |
+| `PARAMETERIZED` register bank | `input logic [PARA_<REGISTER>_COUNT-1:0] i_hw_clear_<register>_<field>` | Bit `i` clears copy `i`; inactive entries are ignored by the generated register loop. |
+| `PARA_ASYNCHRONOUS=0` | Register clock is the selected bus clock | The clear must meet that clock's setup and hold requirements. |
+| `PARA_ASYNCHRONOUS=1` | Register clock is `i_clk_reg` | The integrator must provide the clear in the `i_clk_reg` domain; the generator does not synchronize it. |
+
+The priority for a stored `wo` field is: active-low asynchronous reset loads the workbook reset value; otherwise, an asserted hardware clear stores zero; otherwise, an accepted software write updates enabled byte lanes; otherwise, the field holds. If clear and software write are asserted together, clear wins and the write has no effect on that edge. Holding clear high keeps the field at zero. Software reads continue to return zero whether or not the field is cleared.
+
+#### C.22.2 Requirements
+
+| ID | Requirement | Source | Verification method | Status |
+|---|---|---|---|---|
+| REQ-WOC-001 | The generator shall emit `i_hw_clear_<register>_<field>` for each `wo` field; a parameterized bank shall use one clear bit per entry. | Generator 3.2 implementation | Generated-port inspection for scalar and parameterized registers; generator regression | Pass: 23/23 generator checks; scalar and banked ports simulated |
+| REQ-WOC-002 | At a rising register-clock edge with clear asserted, the generated `wo` storage shall become zero, independent of byte strobes. | Generator 3.2 implementation | Directed simulation of partial and full-field clear | Pass: APB4 scalar and parameterized tests; AXI4-Lite/AHB-Lite scalar tests |
+| REQ-WOC-003 | Hardware clear shall take priority over a simultaneous software write; reset shall retain its existing priority over both. | Generator 3.2 implementation | Directed clear/write collision tests and existing reset tests | Pass: clear overrides partial writes on all three buses; reset behavior covered by the golden/protocol reset scenarios |
+| REQ-WOC-004 | The generator shall not add a synchronizer for the clear input; integration shall drive it synchronously to the generated register clock. | Generator 3.2 implementation | Port-domain review and CDC review at integration | RTL interface review pass; CDC review remains an integration task |
+
+#### C.22.3 Integration note
+
+For a functional zeroize operation, connect the zeroize control to every `i_hw_clear_` input for stored key fields. The clear ports are synchronous to the register clock and have priority over writes. The generator clears only the `wo` flops; clearing core key-schedule, pipeline, counter, or output state remains the responsibility of the AES integration.
+
 ---
 
 ## Part D. Appendices
@@ -2885,6 +2956,8 @@ The reported protocol matrix is the result of the runs listed above. Lint/elabor
 | 2.4 | 2026-11-02 | Generated RTL is lint clean (generate-loop names per HIE-05, 32-bit address compares, one branch statement per line); new golden-map simulation testbench with mutant check; removed the stale duplicate RTL, benches and Makefiles; one reference output, now organized under `examples/APB4_Synchronous/`. |
 | 2.4 (documents) | 2026-11-02 | All specification documents merged into `spec/CSR_Generator_Specification.md`: script flow with flowcharts, logic schematics of every option, user guide, normative specification, planned extensions. |
 | 3.0 | 2026-11-04 | Added AXI4-Lite and AHB-Lite backends; configurable AXI outstanding modes/read-write depths; AXI/AHB write-lane policies; AHB endian modes; parameter-selected single-clock or dual-clock FIFO models; workbook examples; protocol testbench and regression. C.20 documents the implemented contract. |
+| 3.1 | 2026-11-05 | Added `wo` field generation: software writes update resettable storage and the hardware output, while bus reads return zero for those bits. C.21 specifies the behavior; the v3.2 regression suite exercises it. |
+| 3.2 | 2026-11-05 | Added active-high `i_hw_clear_<register>_<field>` inputs for `wo`; synchronous clear sets the stored field to zero and takes priority over software writes. C.22 defines timing, parameterized-bank behavior, and the register-clock-domain requirement. Generator, simulation, protocol, and >70% per-example coverage regressions pass; see `sim/results/coverage/`. CDC/RDC signoff remains open for integration. |
 
 ### D.2 Figure index
 

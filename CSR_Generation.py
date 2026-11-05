@@ -4,6 +4,9 @@
 # Function: CSR Generation Tool
 # Page: VLSI Technology
 #
+# Version 3.2: add a hardware-clear input for write-only (wo) fields; clear overrides a write.
+# Version 3.1: add the write-only (wo) field type: software writes are stored and exposed
+#   to hardware, while software reads return zero.
 # Version 3.0: add AXI4-Lite/AHB-Lite register interfaces, programmable outstanding policy,
 #   byte-lane writes, AHB endian modes, and parameter-selected sync/async queues.
 # Version 2.4: lint clean-up of the generated RTL (generate-loop names per rule HIE-05, 32-bit address
@@ -31,9 +34,9 @@ from datetime import date, datetime
 from CSR_Protocol_Generation import (ASYNC_FIFO_MODEL, ASYNC_FIFO_MODULE, SYNC_FIFO_MODEL,
                                     SYNC_FIFO_MODULE, ahblite_protocol, axil_protocol)
 
-VERSION = "3.0"
+VERSION = "3.2"
 RSVD_KEY = 'reserved'
-VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c'}
+VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c', 'wo'}
 FLOW_NAME = "VLSIT RTL Generator AI Automation Flow"
 FLOW_PAGE = "https://github.com/nguyenquanicd/APB-CSR-Generator"
 SYNC_MODULE = "m_csr_sync"
@@ -146,7 +149,7 @@ class register:
         self.reset_n = reset_n
         self.port_list = []
         self.logic_list = []
-        self.has_we = any(b.type in {'rw', 'rwi', 'w1c', 'w0c', 'w2c'} for b in self.bit)
+        self.has_we = any(b.type in {'rw', 'wo', 'rwi', 'w1c', 'w0c', 'w2c'} for b in self.bit)
         self.has_rd = any(b.type == 'r2c' for b in self.bit)
         self.lcparam = f"  localparam logic [31:0] LPARA_{self.name.upper()}_OFFSET = 32'h{self.offset[2:]},\n"
         self.we_rtl = ''
@@ -166,8 +169,10 @@ class register:
         for b in self.bit:
             if b.type == 'ro' and b.name != RSVD_KEY:
                 self.port_list.append(port(f"i_{n}_{b.name}", "input", b.width))
-            elif b.type == 'rw':
+            elif b.type in {'rw', 'wo'}:
                 self.port_list.append(port(f"o_{n}_{b.name}", "output", b.width))
+                if b.type == 'wo':
+                    self.port_list.append(port(f"i_hw_clear_{n}_{b.name}", "input", 1))
                 self.logic_list.append(port(f"reg_{n}_{b.name}", "logic", b.width))
                 self.logic_list.append(port(f"w_{n}_{b.name}_nxt", "logic", b.width))
             elif b.type in {'rwi', 'w1c', 'w0c', 'w2c', 'r2c'}:
@@ -188,6 +193,9 @@ class register:
             if b.type == 'ro':
                 if b.name != RSVD_KEY:
                     temp += f"    w_{n}_value{b.field} = i_{n}_{b.name};\n"
+            elif b.type == 'wo':
+                # Write-only software fields are intentionally absent from the read mux.
+                continue
             else:
                 temp += f"    w_{n}_value{b.field} = reg_{n}_{b.name};\n"
         if flops:
@@ -239,7 +247,14 @@ class bit:
         cur = f"reg_{r}_{self.name}"
         mask = f"reg_wmask{self.field}"
         sw_we = f"(w_we_{r} & (|{mask}))"
-        if self.type == 'rw':
+        if self.type == 'wo':
+            self.rtl += f'''
+  // {r}_{self.name} next value (wo): hardware clear overrides software writes.
+  assign {nxt} = i_hw_clear_{r}_{self.name} ? '0
+               : {sw_we} ? ((reg_wdata{self.field} & {mask}) | ({cur} & ~{mask}))
+               : {cur};
+'''
+        elif self.type == 'rw':
             self.rtl += f'''
   // {r}_{self.name} next value (rw): update only byte lanes selected by the bus strobe.
   assign {nxt} = {sw_we} ? ((reg_wdata{self.field} & {mask}) | ({cur} & ~{mask})) : {cur};
@@ -296,7 +311,7 @@ class parameterized_register:
         self.base_parameter = f"LPARA_{self.name.upper()}_BASE_OFFSET"
         self.stride_parameter = f"LPARA_{self.name.upper()}_OFFSET_STRIDE"
         self.max_parameter = f"LPARA_{self.name.upper()}_MAX_COUNT"
-        self.has_we = any(b.type in {'rw', 'rwi', 'w1c', 'w0c', 'w2c'} for b in self.bit)
+        self.has_we = any(b.type in {'rw', 'wo', 'rwi', 'w1c', 'w0c', 'w2c'} for b in self.bit)
         self.has_rd = any(b.type == 'r2c' for b in self.bit)
         self.port_list = []
         self.logic_list = []
@@ -325,7 +340,10 @@ class parameterized_register:
                 self.port_list.append(port(f"i_{n}_{b.name}", "input", b.width * self.count_default, width_text))
             elif b.type != 'ro':
                 self.port_list.append(port(f"o_{n}_{b.name}", "output", b.width * self.count_default, width_text))
-                if b.type in {'rwi', 'w1c', 'w0c', 'w2c', 'r2c'}:
+                if b.type == 'wo':
+                    self.port_list.append(port(f"i_hw_clear_{n}_{b.name}", "input", self.count_default,
+                                               f"[{self.count_parameter}-1:0]"))
+                elif b.type in {'rwi', 'w1c', 'w0c', 'w2c', 'r2c'}:
                     self.port_list.append(port(f"i_hw_wdata_{n}_{b.name}", "input", b.width * self.count_default, width_text))
                     self.port_list.append(port(f"i_hw_we_{n}_{b.name}", "input", self.count_default, f"[{self.count_parameter}-1:0]"))
                 self.logic_list.append(port(f"reg_{n}_{b.name}", "logic", b.width * self.count_default, width_text))
@@ -369,11 +387,15 @@ class parameterized_register:
                 if b.name != RSVD_KEY:
                     value_part += f"      w_{n}_value[gen_idx]{b.field} = i_{n}_{b.name}[gen_idx];\n"
             else:
-                value_part += f"      w_{n}_value[gen_idx]{b.field} = {cur};\n"
+                if b.type != 'wo':
+                    value_part += f"      w_{n}_value[gen_idx]{b.field} = {cur};\n"
                 sw_we = f"w_we_{n}[gen_idx]"
                 mask = f"reg_wmask{b.field}"
                 sw_field_we = f"({sw_we} & (|{mask}))"
-                if b.type == 'rw':
+                if b.type == 'wo':
+                    expr = (f"i_hw_clear_{n}_{b.name}[gen_idx] ? '0 : "
+                            f"({sw_field_we} ? ((reg_wdata{b.field} & {mask}) | ({cur} & ~{mask})) : {cur})")
+                elif b.type == 'rw':
                     expr = f"{sw_field_we} ? ((reg_wdata{b.field} & {mask}) | ({cur} & ~{mask})) : {cur}"
                 elif b.type == 'rwi':
                     expr = (f"{sw_field_we} ? ((reg_wdata{b.field} & {mask}) | "

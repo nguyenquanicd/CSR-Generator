@@ -1,0 +1,9 @@
+COVER register_events read=358 write=334 bad=0
+COVER rwi_sw=12 w1c_hw=6 w0c_hw=6 w2c_hw=6 r2c_hw=6 hw0=18 clr(w1c,w0c,w2c,r2c)=6,6,6,6
+COVER sva001=855 sva004=3
+COVER err=106 ok_wr=239 ok_rd=260 unmapped=8 b2b=1 rst_mid=4
+TB PASS ASYNC=0 MC=2 P_APB=10000 P_REG=10000: 11160 checks
+- C:\HQuan\102_MyGithub\APB-CSR-Generator\sim\tests\golden_test\tb_csr_golden.sv:924: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.053 devel
+- Verilator: $finish at 38us; walltime 0.052 s; speed 728.519 us/s
+- Verilator: cpu 0.000 s on 1 threads; allocated 10 MB

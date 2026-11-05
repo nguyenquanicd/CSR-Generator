@@ -48,6 +48,10 @@ module tb_csr_golden;
   reg  [39:0] hw_wd_flat = 0;
   wire [31:0] o_mode_flat;
   wire [39:0] o_f_flat;
+  wire [31:0] o_key_data;
+  reg i_hw_clear_key_data = 1'b0;
+  wire [MC-1:0][14:0] o_monitor_key_fragment;
+  reg [MC-1:0] i_hw_clear_monitor_key_fragment = '0;
 
   wire [MC-1:0][7:0] mon_ro;
   wire [MC-1:0][3:0] mon_thr;
@@ -111,7 +115,9 @@ module tb_csr_golden;
     .o_monitor_error(mon_o1), .i_hw_wdata_monitor_error(mon_wd1), .i_hw_we_monitor_error(mon_we1),
     .o_monitor_pending(mon_o2), .i_hw_wdata_monitor_pending(mon_wd2), .i_hw_we_monitor_pending(mon_we2),
     .o_monitor_overflow(mon_o3), .i_hw_wdata_monitor_overflow(mon_wd3), .i_hw_we_monitor_overflow(mon_we3),
-    .o_monitor_match(mon_o4), .i_hw_wdata_monitor_match(mon_wd4), .i_hw_we_monitor_match(mon_we4)
+    .o_monitor_match(mon_o4), .i_hw_wdata_monitor_match(mon_wd4), .i_hw_we_monitor_match(mon_we4),
+    .o_monitor_key_fragment(o_monitor_key_fragment), .i_hw_clear_monitor_key_fragment(i_hw_clear_monitor_key_fragment),
+    .o_key_data(o_key_data), .i_hw_clear_key_data(i_hw_clear_key_data)
 `ifdef CSR_EVENT_SIDEBAND
     , .o_reg_rd_en(reg_rd_en), .o_reg_rd_addr(reg_rd_addr)
     , .o_reg_wr_en(reg_wr_en), .o_reg_wr_addr(reg_wr_addr)
@@ -279,7 +285,8 @@ module tb_csr_golden;
       if (reg_wr_en) begin
         reg_wr_event_count = reg_wr_event_count + 1;
         reg_wr_event_addr = reg_wr_addr;
-        if (!psel || !penable || !pwrite || (reg_wr_addr !== paddr) || (lookup(paddr) < 0))
+        if (!psel || !penable || !pwrite || (reg_wr_addr !== paddr) ||
+            ((lookup(paddr) < 0) && (paddr != 16'h0400)))
           reg_event_bad_count = reg_event_bad_count + 1;
       end else if (reg_wr_addr !== 16'h0000) begin
         reg_event_bad_count = reg_event_bad_count + 1;
@@ -398,6 +405,8 @@ module tb_csr_golden;
       psel = 0; penable = 0; chain = 0;
       hw_we_flat = 0; hw_wd_flat = 0; ro_flat = 0;
       arm_wr = 0; arm_rd = 0; hw_clr = 0;
+      i_hw_clear_key_data = 1'b0;
+      i_hw_clear_monitor_key_fragment = '0;
       repeat (4) @(posedge clk_apb);
       repeat (4) @(posedge clk_reg);
       #1;
@@ -442,6 +451,67 @@ module tb_csr_golden;
         ro_flat[i * 8 +: 8] = ~ro_flat[i * 8 +: 8];
         do_rd(i);
         chk(last_rdata[31:24] === ro_flat[i * 8 +: 8] && last_rdata[14:0] === 15'h0, "ro pass-through and reserved bits");
+      end
+    end
+  endtask
+
+  task automatic t_wo_hardware_clear;
+    begin
+      chk(o_key_data === 32'h0, "wo: reset value is zero");
+      apb(1'b1, 16'h0400, 32'hA1B2C3D4, 4'hF, 3'b000, 1'b0);
+      chk(last_err === 1'b0 && o_key_data === 32'hA1B2C3D4, "wo: software write is stored for hardware");
+      apb(1'b0, 16'h0400, 32'h0, 4'hF, 3'b000, 1'b0);
+      chk(last_err === 1'b0 && last_rdata === 32'h0, "wo: software read returns zero");
+      i_hw_clear_key_data = 1'b1;
+      slverr_en = 1'b0;
+      apb(1'b1, 16'h0400, 32'hFFFFFFFF, 4'h1, 3'b000, 1'b0);
+      chk(last_err === 1'b0 && o_key_data === 32'h0,
+          "wo: hardware clear wins over simultaneous partial software write");
+      i_hw_clear_key_data = 1'b0;
+      slverr_en = 1'b1;
+      apb(1'b1, 16'h0400, 32'h55667788, 4'hF, 3'b000, 1'b0);
+      chk(o_key_data === 32'h55667788, "wo: software write works after clear release");
+      repeat (2) @(posedge clk_r);
+      chk(o_key_data === 32'h55667788, "wo: field holds when clear and write are inactive");
+      apb(1'b0, 16'h0400, 32'h0, 4'hF, 3'b000, 1'b0);
+      chk(last_rdata === 32'h0, "wo: later read still returns zero");
+    end
+  endtask
+
+  task automatic t_wo_parameterized_clear;
+    integer a, b;
+    begin
+      slverr_en = 1'b1;
+      i_hw_clear_monitor_key_fragment = '0;
+      for (a = 0; a < MC; a = a + 1) begin
+        apb(1'b1, iaddr(4 + a), 32'h00005555 + a, 4'hF, 3'b000, 1'b0);
+        chk(last_err === 1'b0 && o_monitor_key_fragment[a] === (15'h5555 + a),
+            "parameterized wo: each entry stores its software write");
+      end
+      for (a = 0; a < MC; a = a + 1) begin
+        @(negedge clk_r);
+        i_hw_clear_monitor_key_fragment = '0;
+        i_hw_clear_monitor_key_fragment[a] = 1'b1;
+        @(posedge clk_r); #1;
+        for (b = 0; b < MC; b = b + 1) begin
+          chk(o_monitor_key_fragment[b] === ((b <= a) ? 15'h0 : (15'h5555 + b)),
+              $sformatf("parameterized wo: clear index=%0d entry=%0d expected=%04h actual=%04h",
+                        a, b, ((b <= a) ? 15'h0 : (15'h5555 + b)), o_monitor_key_fragment[b]));
+        end
+      end
+      @(negedge clk_r);
+      i_hw_clear_monitor_key_fragment = '0;
+      i_hw_clear_monitor_key_fragment[0] = 1'b1;
+      slverr_en = 1'b0;
+      apb(1'b1, iaddr(4), 32'h00007FFF, 4'h1, 3'b000, 1'b0);
+      chk(last_err === 1'b0 && o_monitor_key_fragment[0] === 15'h0,
+          "parameterized wo: clear overrides partial software write");
+      i_hw_clear_monitor_key_fragment = '0;
+      slverr_en = 1'b1;
+      for (a = 0; a < MC; a = a + 1) begin
+        apb(1'b0, iaddr(4 + a), 32'h0, 4'hF, 3'b000, 1'b0);
+        chk(last_err === 1'b0 && last_rdata[14:0] === 15'h0,
+            "parameterized wo: bus reads return zero for every entry");
       end
     end
   endtask
@@ -789,6 +859,8 @@ module tb_csr_golden;
 `endif
     t_reset_values;
     t_fields;
+    t_wo_hardware_clear;
+    t_wo_parameterized_clear;
     test_phase = 1;
   end
 

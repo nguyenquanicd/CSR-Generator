@@ -2,7 +2,8 @@
 
 module tb_ahblite #(
   parameter logic [31:0] TEST_ENDIAN = 32'd0,
-  parameter logic [31:0] TEST_ASYNC = 32'd0
+  parameter logic [31:0] TEST_ASYNC = 32'd0,
+  parameter logic [31:0] TEST_EXAMPLE = 32'd0
 );
   logic i_clk_ahb;
   logic i_clk_reg;
@@ -20,7 +21,23 @@ module tb_ahblite #(
   wire o_ahb_hresp;
   wire [31:0] o_ahb_hrdata;
   wire [31:0] o_data_value;
+  wire [31:0] o_key_data;
+  logic i_hw_clear_key_data;
   integer test_count;
+  logic [31:0] wo_write_word;
+  logic [31:0] wo_partial_write_data;
+  logic [15:0] wo_partial_write_addr;
+  logic [31:0] wo_after_partial;
+  logic i_hw_wdata_engine_start;
+  logic i_hw_we_engine_start;
+  logic i_hw_wdata_engine_fault;
+  logic i_hw_we_engine_fault;
+  logic i_hw_wdata_engine_pending;
+  logic i_hw_we_engine_pending;
+  logic i_hw_wdata_engine_overflow;
+  logic i_hw_we_engine_overflow;
+  logic i_hw_wdata_engine_done;
+  logic i_hw_we_engine_done;
 
   initial begin
     i_clk_ahb = 1'b0;
@@ -42,7 +59,8 @@ module tb_ahblite #(
     .i_ahb_haddr(i_ahb_haddr), .i_ahb_hwrite(i_ahb_hwrite), .i_ahb_hsize(i_ahb_hsize),
     .i_ahb_hburst(i_ahb_hburst), .i_ahb_hwdata(i_ahb_hwdata),
     .o_ahb_hreadyout(o_ahb_hreadyout), .o_ahb_hresp(o_ahb_hresp),
-    .o_ahb_hrdata(o_ahb_hrdata), .o_data_value(o_data_value)
+    .o_ahb_hrdata(o_ahb_hrdata), .o_data_value(o_data_value),
+    .o_key_data(o_key_data), .i_hw_clear_key_data(i_hw_clear_key_data)
   );
 
   task automatic ahb_access(input logic [15:0] address,
@@ -61,7 +79,7 @@ module tb_ahblite #(
       i_ahb_haddr = address;
       i_ahb_hwrite = write_access;
       i_ahb_hsize = size;
-      i_ahb_hburst = 3'b000;
+      i_ahb_hburst = address[4:2];
       @(posedge i_clk_ahb);
       @(negedge i_clk_ahb);
       i_ahb_hsel = 1'b0;
@@ -92,6 +110,69 @@ module tb_ahblite #(
     end
   endtask
 
+  task automatic run_example_map;
+    begin
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h12000000);
+      ahb_access(16'h0000, 1'b1, 3'd2, 32'h00B80000, 1'b0, '0);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h12B80000);
+
+      @(negedge i_clk_ahb);
+      i_hw_wdata_engine_start = 1'b1;
+      i_hw_we_engine_start = 1'b1;
+      i_hw_wdata_engine_fault = 1'b1;
+      i_hw_we_engine_fault = 1'b1;
+      i_hw_wdata_engine_pending = 1'b1;
+      i_hw_we_engine_pending = 1'b1;
+      i_hw_wdata_engine_overflow = 1'b1;
+      i_hw_we_engine_overflow = 1'b1;
+      i_hw_wdata_engine_done = 1'b1;
+      i_hw_we_engine_done = 1'b1;
+      @(posedge i_clk_ahb);
+      @(negedge i_clk_ahb);
+      i_hw_we_engine_start = 1'b0;
+      i_hw_we_engine_fault = 1'b0;
+      i_hw_we_engine_pending = 1'b0;
+      i_hw_we_engine_overflow = 1'b0;
+      i_hw_we_engine_done = 1'b0;
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h12BF8000);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h12BF0000);
+      ahb_access(16'h0000, 1'b1, 3'd2, 32'h00000000, 1'b0, '0);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h12040000);
+      ahb_access(16'h0000, 1'b1, 3'd2, 32'h00040000, 1'b0, '0);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h12000000);
+
+      @(negedge i_clk_ahb);
+      i_hw_wdata_engine_pending = 1'b1;
+      i_hw_we_engine_pending = 1'b1;
+      @(posedge i_clk_ahb);
+      @(negedge i_clk_ahb);
+      i_hw_we_engine_pending = 1'b0;
+      ahb_access(16'h0000, 1'b1, 3'd2, 32'h00020000, 1'b0, '0);
+      ahb_access(16'h0000, 1'b0, 3'd2, '0, 1'b0, 32'h12020000);
+
+      ahb_access(16'h0100, 1'b0, 3'd2, '0, 1'b0, 32'h34000000);
+      ahb_access(16'h0100, 1'b1, 3'd2, 32'h00A80000, 1'b0, '0);
+      ahb_access(16'h0100, 1'b0, 3'd2, '0, 1'b0, 32'h34A80000);
+      ahb_access(16'h0200, 1'b0, 3'd2, '0, 1'b0, 32'h56000000);
+      ahb_access(16'h0200, 1'b1, 3'd2, 32'h00580000, 1'b0, '0);
+      ahb_access(16'h0200, 1'b0, 3'd2, '0, 1'b0, 32'h56580000);
+
+      ahb_access(16'h0400, 1'b0, 3'd2, '0, 1'b0, 32'h00000000);
+      ahb_access(16'h0400, 1'b1, 3'd2, 32'hA1B2C3D4, 1'b0, '0);
+      if (o_key_data !== 32'hA1B2C3D4) $fatal(1, "example WO field did not store the key");
+      ahb_access(16'h0400, 1'b0, 3'd2, '0, 1'b0, 32'h00000000);
+      i_hw_clear_key_data = 1'b1;
+      ahb_access(16'h0400, 1'b1, 3'd2, 32'hFFFFFFFF, 1'b0, '0);
+      i_hw_clear_key_data = 1'b0;
+      if (o_key_data !== 32'h00000000) $fatal(1, "example WO clear did not override write");
+      ahb_access(16'h0400, 1'b1, 3'd2, 32'h55667788, 1'b0, '0);
+      if (o_key_data !== 32'h55667788) $fatal(1, "example WO write after clear failed");
+      ahb_access(16'h0400, 1'b0, 3'd2, '0, 1'b0, 32'h00000000);
+      ahb_access(16'h0002, 1'b1, 3'd2, 32'h11111111, 1'b1, '0);
+      ahb_access(16'h0300, 1'b0, 3'd2, '0, 1'b1, '0);
+    end
+  endtask
+
   initial begin
     i_rst_n_ahb = 1'b0;
     i_rst_n_reg = 1'b0;
@@ -103,6 +184,17 @@ module tb_ahblite #(
     i_ahb_hsize = 3'd2;
     i_ahb_hburst = 3'b000;
     i_ahb_hwdata = '0;
+    i_hw_clear_key_data = 1'b0;
+    i_hw_wdata_engine_start = 1'b0;
+    i_hw_we_engine_start = 1'b0;
+    i_hw_wdata_engine_fault = 1'b0;
+    i_hw_we_engine_fault = 1'b0;
+    i_hw_wdata_engine_pending = 1'b0;
+    i_hw_we_engine_pending = 1'b0;
+    i_hw_wdata_engine_overflow = 1'b0;
+    i_hw_we_engine_overflow = 1'b0;
+    i_hw_wdata_engine_done = 1'b0;
+    i_hw_we_engine_done = 1'b0;
     test_count = 0;
     repeat (5) @(negedge i_clk_ahb);
     i_rst_n_ahb = 1'b1;
@@ -110,9 +202,47 @@ module tb_ahblite #(
     i_rst_n_reg = 1'b1;
     repeat (10) @(posedge i_clk_ahb);
 
+    if (TEST_EXAMPLE != 32'd0) begin
+      run_example_map();
+      $display("PASS AHB example map: full field access, mapped/unmapped, and WO hardware clear");
+      $finish;
+    end
+
     if (o_data_value !== 32'h12345678) $fatal(1, "CSR reset value mismatch");
     test_count = test_count + 1;
     $display("PASS AHB case: reset and selected FIFO clock-mode initialization");
+
+    wo_write_word = (TEST_ENDIAN == 32'd1) ? 32'hD4C3B2A1 : 32'hA1B2C3D4;
+    ahb_access(16'h0010, 1'b0, 3'd2, '0, 1'b0, 32'h00000000);
+    ahb_access(16'h0010, 1'b1, 3'd2, wo_write_word, 1'b0, '0);
+    if (o_key_data !== 32'hA1B2C3D4) $fatal(1, "WO storage did not capture software write");
+    ahb_access(16'h0010, 1'b0, 3'd2, '0, 1'b0, 32'h00000000);
+    if (TEST_ENDIAN == 32'd0) begin
+      wo_partial_write_addr = 16'h0011;
+      wo_partial_write_data = 32'h0000EE00;
+      wo_after_partial = 32'hA1B2EED4;
+    end else if (TEST_ENDIAN == 32'd1) begin
+      wo_partial_write_addr = 16'h0010;
+      wo_partial_write_data = 32'h000000EE;
+      wo_after_partial = 32'hEEB2C3D4;
+    end else begin
+      wo_partial_write_addr = 16'h0010;
+      wo_partial_write_data = 32'hEE000000;
+      wo_after_partial = 32'hEEB2C3D4;
+    end
+    ahb_access(wo_partial_write_addr, 1'b1, 3'd0, wo_partial_write_data, 1'b0, '0);
+    if (o_key_data !== wo_after_partial) $fatal(1, "WO WSTRB did not update selected byte lane: %08x", o_key_data);
+    i_hw_clear_key_data = 1'b1;
+    ahb_access(16'h0010, 1'b1, 3'd2, wo_write_word, 1'b0, '0);
+    i_hw_clear_key_data = 1'b0;
+    if (o_key_data !== 32'h00000000) $fatal(1, "WO hardware clear did not override concurrent software write");
+    repeat (2) @(posedge i_clk_ahb);
+    if (o_key_data !== 32'h00000000) $fatal(1, "WO field changed after clear was released");
+    ahb_access(16'h0010, 1'b1, 3'd2, (TEST_ENDIAN == 32'd1) ? 32'h88776655 : 32'h55667788, 1'b0, '0);
+    if (o_key_data !== 32'h55667788) $fatal(1, "WO field did not accept a write after clear release");
+    ahb_access(16'h0010, 1'b0, 3'd2, '0, 1'b0, 32'h00000000);
+    test_count = test_count + 1;
+    $display("PASS AHB case: WO read-zero, WSTRB, storage, clear priority, and post-clear write");
 
     if (TEST_ENDIAN == 32'd0) begin
       ahb_access(16'h0000, 1'b1, 3'd2, 32'h11223344, 1'b0, '0);

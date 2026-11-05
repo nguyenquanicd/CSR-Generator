@@ -1,0 +1,7 @@
+PASS AHB example map: full field access, mapped/unmapped, and WO hardware clear
+- C:\HQuan\102_MyGithub\APB-CSR-Generator\sim\results\coverage\run_20261105_075317\tb_AHB_Lite.sv:531: Verilog $finish
+[9660000] %Fatal: tb_AHB_Lite.sv:534: Assertion failed in tb_ahblite: CSR reset value mismatch
+PASS AHB case: reset and selected FIFO clock-mode initialization
+- S i m u l a t i o n   R e p o r t: Verilator 5.053 devel
+- Verilator: $finish at 10us; walltime 0.019 s; speed 519.395 us/s
+- Verilator: cpu 0.031 s on 1 threads; allocated 10 MB

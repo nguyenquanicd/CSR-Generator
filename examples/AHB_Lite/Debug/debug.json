@@ -4,7 +4,7 @@
     "Function": "Used to check the configuration after generation",
     "Author": "Nguyen Quan (user)",
     "Generator": "PC",
-    "Generator version": "3.0",
+    "Generator version": "3.2",
     "Page": "VLSI Technology",
     "Table - Configuration": [
     {
@@ -17,7 +17,8 @@
         "AXI Outstanding Mode": "SINGLE",
         "AXI Read Depth": "1",
         "AXI Write Depth": "1",
-        "AHB Endian": "LITTLE"
+        "AHB Endian": "LITTLE",
+        "Register Event Sideband": "0"
     }
     ],
     "Table - Register Definition": [
@@ -353,11 +354,30 @@
                 "Description": "Threshold-match event. A completed CSR read returns its current value and then clears the field; hardware update wins."
             },
             {
-                "Bit Name": "reserved",
-                "Bit Type": "ro",
+                "Bit Name": "key_fragment",
+                "Bit Type": "wo",
                 "Bit Field": "[14:0]",
                 "Reset Value": "0x0",
-                "Description": "Reserved; reads as zero and has no hardware input."
+                "Description": "Write-only per-monitor key fragment. Active-high synchronous hardware clear is provided per entry and overrides a simultaneous software write."
+            }
+          ]
+        },
+        {
+        "Register Name": "key",
+        "Offset": "0x0400",
+        "Repeat Mode": "NONE",
+        "Count or Default": "1",
+        "Offset Stride": "4",
+        "Maximum Count": "1",
+        "Reset Value": "0x00000000",
+        "Descriprtion": "Hardware key storage. Software writes update the output; software reads return zero. Active-high synchronous hardware clear clears all bits and takes priority over a simultaneous software write.",
+        "Bits": [
+            {
+                "Bit Name": "data",
+                "Bit Type": "wo",
+                "Bit Field": "[31:0]",
+                "Reset Value": "0x00000000",
+                "Description": "Write-only key storage with hardware-clear support for zeroize."
             }
           ]
         }

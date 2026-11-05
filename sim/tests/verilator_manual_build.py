@@ -26,7 +26,8 @@ def _find_cxx(env):
 
 
 def build_and_run(verilator, top, rtl_files, parameter_args, obj_dir, env,
-                  defines=(), label="simulation", success_marker=None):
+                  defines=(), label="simulation", success_marker=None,
+                  coverage_file=None):
     """Return (success, output); compile generated C++ directly, bypassing make."""
     obj_dir = Path(obj_dir).resolve()
     obj_dir.mkdir(parents=True, exist_ok=True)
@@ -43,6 +44,8 @@ def build_and_run(verilator, top, rtl_files, parameter_args, obj_dir, env,
         "--Mdir", str(obj_dir), "-o", "run.exe",
         *defines, *parameter_args, *(str(Path(path).resolve()) for path in rtl_files),
     ]
+    if coverage_file is not None:
+        codegen[1:1] = ["--coverage", "--coverage-line", "--coverage-expr", "--coverage-toggle"]
     generated = subprocess.run(codegen, cwd=obj_dir.parent, env=env, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if generated.returncode != 0:
@@ -55,8 +58,10 @@ def build_and_run(verilator, top, rtl_files, parameter_args, obj_dir, env,
         return False, "Verilator did not generate C++ source files"
 
     support_dir = Path(verilator_root) / "include"
-    support_sources = [support_dir / name for name in (
-        "verilated.cpp", "verilated_timing.cpp", "verilated_threads.cpp")]
+    support_names = ["verilated.cpp", "verilated_timing.cpp", "verilated_threads.cpp"]
+    if coverage_file is not None:
+        support_names.append("verilated_cov.cpp")
+    support_sources = [support_dir / name for name in support_names]
     missing = [str(path) for path in support_sources if not path.is_file()]
     if missing:
         return False, "Missing Verilator runtime source(s): " + ", ".join(missing)
@@ -77,7 +82,8 @@ def build_and_run(verilator, top, rtl_files, parameter_args, obj_dir, env,
         "-I" + str(support_dir / "vltstd"),
     ]
     defines_args = [
-        "-DVERILATOR=1", "-DVM_COVERAGE=0", "-DVM_SC=0", "-DVM_TIMING=1",
+        "-DVERILATOR=1", "-DVM_COVERAGE=%d" % (1 if coverage_file is not None else 0),
+        "-DVM_SC=0", "-DVM_TIMING=1",
         "-DVM_TRACE=0", "-DVM_TRACE_FST=0", "-DVM_TRACE_VCD=0",
         "-DVM_TRACE_SAIF=0", "-DVM_VPI=0",
     ]
@@ -92,7 +98,11 @@ def build_and_run(verilator, top, rtl_files, parameter_args, obj_dir, env,
     if compiled.returncode != 0:
         return False, "Direct g++ build failed:\n" + compiled.stdout[-5000:]
 
-    simulated = subprocess.run([str(obj_dir / "run.exe")], cwd=obj_dir, env=env,
+    run_command = [str(obj_dir / "run.exe")]
+    if coverage_file is not None:
+        run_command.append("+verilator+coverage+file+" + str(Path(coverage_file).resolve()))
+        run_command.append("+verilator+seed+1")
+    simulated = subprocess.run(run_command, cwd=obj_dir, env=env,
                                text=True, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT)
     if simulated.returncode != 0:
