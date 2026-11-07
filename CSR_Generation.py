@@ -4,6 +4,14 @@
 # Function: CSR Generation Tool
 # Page: VLSI Technology
 #
+# Version 3.4 (2026-11-07): fix of the read-data decode of repeated (PARAMETERIZED) registers.
+#   Symptom: a readable (ro) repeated register read back 0 when another repeated group came after it
+#   (example: mkv_e_chn of the MKV IP, while mkv_d_chn, the last group, was correct).
+#   Cause: each group had its own 'case' with 'default: w_rdata_nxt = 0', run one after another, so the default
+#   of a later group cleared the read data of an earlier group.
+#   Fix: every element of every repeated group is an item of the one read case, with one default; the read value of a
+#   register no longer depends on any other register. Ports, parameters and the write path are unchanged.
+#   Test: sim/tests/generator_test (read decode structure), sim/tests/golden_test, examples regenerated.
 # Version 3.3: use w_ for the combinational mask and i_hw_clr_ for shorter wo-clear ports; behavior is unchanged.
 # Version 3.2: add a hardware-clear input for write-only (wo) fields; clear overrides a write.
 # Version 3.1: add the write-only (wo) field type: software writes are stored and exposed
@@ -35,7 +43,7 @@ from datetime import date, datetime
 from CSR_Protocol_Generation import (ASYNC_FIFO_MODEL, ASYNC_FIFO_MODULE, SYNC_FIFO_MODEL,
                                     SYNC_FIFO_MODULE, ahblite_protocol, axil_protocol)
 
-VERSION = "3.3"
+VERSION = "3.4"
 RSVD_KEY = 'reserved'
 VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c', 'wo'}
 FLOW_NAME = "VLSIT RTL Generator AI Automation Flow"
@@ -703,36 +711,24 @@ class apb_protocol:
 
     def prdata_rtl(self, reg_list):
         items = ""
-        parameterized = []
         for r in reg_list:
             if isinstance(r, parameterized_register):
-                parameterized.append(r)
+                # every element is an item of the same case: the decode of one register never depends on another register
+                for index in range(r.max_count):
+                    items += (
+                        f"      ({r.base_parameter} + (32'd{index} * {r.stride_parameter})): begin\n"
+                        f"        if (({r.count_parameter} > 32'd{index}) && ({r.count_parameter} <= {r.max_parameter}))\n"
+                        f"          w_rdata_nxt = w_{r.name}_value[{index}];\n"
+                        f"      end\n"
+                    )
             else:
                 items += f"      LPARA_{r.name.upper()}_OFFSET: w_rdata_nxt = w_{r.name}_value;\n"
-        dynamic_decode = ""
-        for r in parameterized:
-            dynamic_items = ""
-            for index in range(r.max_count):
-                dynamic_items += (
-                    f"          ({r.base_parameter} + (32'd{index} * {r.stride_parameter})): begin\n"
-                    f"            if ({r.count_parameter} > 32'd{index})\n"
-                    f"              w_rdata_nxt = w_{r.name}_value[{index}];\n"
-                    f"          end\n"
-                )
-            dynamic_decode += f'''      if (({r.count_parameter} >= 32'd1) && ({r.count_parameter} <= {r.max_parameter})) begin
-        case (32'(reg_addr))
-{dynamic_items}          default: w_rdata_nxt = '0;
-        endcase
-      end
-'''
         self.rtl_prdata = f'''
   // Read data mux returns zero for addresses that do not map to a register.
   always_comb begin : p_com_rdata
     w_rdata_nxt = '0;
     case (32'(reg_addr))
-{items}      default: begin
-        w_rdata_nxt = '0;
-{dynamic_decode}      end
+{items}      default: w_rdata_nxt = '0;
     endcase
   end
 

@@ -103,6 +103,20 @@ def main():
         a = re.sub(r'Date\s*:.*', '', open(sv, encoding='utf-8').read())
         b = re.sub(r'Date\s*:.*', '', open(os.path.join(out2, 'RTL', mod + '.sv'), encoding='utf-8').read())
         check('%s: repeatable output' % sheet, a == b)
+        # version 3.4: the read-data decode of the repeated registers does not depend on any other register group
+        text = open(sv, encoding='utf-8').read()
+        rd = text[text.index('p_com_rdata'):text.index('Read response storage')]
+        groups = re.findall(r'LPARA_(\w+)_OFFSET_STRIDE', text)
+        n_default = len(re.findall(r"default: w_rdata_nxt = '0;", rd))
+        check('%s: read decode has one default, no nested case per repeated group' % sheet, n_default == 1 and rd.count('case (') == 1,
+              '(defaults: %d, case statements: %d)' % (n_default, rd.count('case (')))
+        missing = []
+        for g in sorted(set(groups)):
+            base = 'LPARA_%s_BASE_OFFSET' % g
+            mx = len(re.findall(r"\(%s \+ \(32'd\d+ \* LPARA_%s_OFFSET_STRIDE\)\): begin" % (base, g), rd))
+            if mx == 0:
+                missing.append(g)
+        check('%s: every repeated register element is an item of the read case' % sheet, not missing, '(missing: %s)' % ','.join(missing))
     # negative inputs
     r = run([wb_path, 'NO_SUCH_SHEET', '--out', os.path.join(tmp, 'x')])
     check('missing sheet: exit status 1', r.returncode == 1)

@@ -4,7 +4,7 @@
 |---|---|
 | Document | Specification of APB-CSR-Generator: script flow, workbook reference, user guide, normative design specification, implementation history |
 | Product | `CSR_Generation.py`, a generator of APB4, AXI4-Lite, or AHB-Lite CSR modules from an Excel register map |
-| Generator version described | 3.3; Part B retains the APB4 2.4 baseline, Part C records the 3.0 bus backends, 3.1 `wo` field, and 3.2 `wo` hardware clear |
+| Generator version described | 3.4 (read decode of repeated registers fixed; see the version table); Part B retains the APB4 2.4 baseline, Part C records the 3.0 bus backends, 3.1 `wo` field, and 3.2 `wo` hardware clear |
 | Document date | 2026-11-05 |
 | Language | English; Vietnamese summaries and appendices where marked |
 | Replaces | `README.md` (technical content), `APB_CSR_Generator_Design_Specification.md`, `Repeated_Register_Generation_Specification.md`, `CSR_Attribute_Extension_Specification.md` |
@@ -104,9 +104,10 @@ Status legend used in Part A: **[implemented]** the behavior exists in the curre
 
 | Item | Value |
 |---|---|
-| Generator version | 3.3 (`VERSION` in `CSR_Generation.py`) |
+| Generator version | 3.4 (`VERSION` in `CSR_Generation.py`); 3.4 only changes the read-data decode of repeated registers: every element is an item of the one case, so a readable repeated register is no longer zeroed by a later group |
 | RTL rule baseline | VLSIT RTL Design Rule v2 (naming, port layout, header, process labels) |
 | Existing verification evidence | Generator regression and AXI4-Lite/AHB-Lite protocol simulation results are recorded in C.20.7; APB4 2.4 evidence remains in B.15.5 |
+| Version 3.4 status | Defect fixed 2026-11-07: a readable repeated register (`ro` field in a `PARAMETERIZED` group) read back 0 when a later repeated group existed, because each group had its own read `case` with `default: w_rdata_nxt = '0` in sequence. Each element is now an item of the single read `case`. Evidence: `sim/tests/generator_test` (27 of 27), `sim/tests/golden_test --quick` (pass), examples regenerated, readback of both chain registers in the MKV IP |
 | Version 3.2 status (historical) | `wo` hardware-clear is generated and exercised on APB4, AXI4-Lite, and AHB-Lite; generator, golden-map, protocol, and coverage regressions pass (coverage results in `sim/results/coverage/`) |
 | Not done | CDC/RDC signoff, synthesis/area characterization, formal equivalence across versions |
 

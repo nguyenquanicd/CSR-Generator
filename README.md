@@ -2,7 +2,7 @@
 
 ## English
 
-`CSR_Generation.py` v3.3 reads a register map from an Excel workbook and generates one synthesizable SystemVerilog CSR module. Each workbook sheet selects one bus interface.
+`CSR_Generation.py` v3.4 reads a register map from an Excel workbook and generates one synthesizable SystemVerilog CSR module. Each workbook sheet selects one bus interface.
 
 | Bus | Supported profile | Key options |
 |---|---|---|
@@ -48,7 +48,7 @@ The root [`CSR_GOLDEN_FORMAT.xlsx`](CSR_GOLDEN_FORMAT.xlsx) contains the complet
 
 ## Tiếng Việt
 
-`CSR_Generation.py` phiên bản 3.3 đọc bản đồ thanh ghi từ workbook Excel và sinh một module CSR SystemVerilog có thể tổng hợp. Mỗi sheet chọn một giao diện bus.
+`CSR_Generation.py` phiên bản 3.4 đọc bản đồ thanh ghi từ workbook Excel và sinh một module CSR SystemVerilog có thể tổng hợp. Mỗi sheet chọn một giao diện bus.
 
 | Bus | Profile hỗ trợ | Tùy chọn chính |
 |---|---|---|
@@ -91,6 +91,18 @@ Coverage regression sinh lại RTL của cả ba ví dụ từ workbook rồi ch
 ### Ví dụ
 
 [`CSR_GOLDEN_FORMAT.xlsx`](CSR_GOLDEN_FORMAT.xlsx) ở thư mục gốc chứa đầy đủ sheet cấu hình và mô phỏng. Mỗi ví dụ giao thức có workbook cấu hình một sheet, RTL, filelist và báo cáo debug riêng trong [`examples/`](examples/README.md), gồm cả ví dụ APB4 trước đây đặt ở thư mục gốc.
+
+## Version history
+
+| Version | Date | Change | Verification |
+|---|---|---|---|
+| 3.4 | 2026-11-07 | **Fix: readable repeated registers returned 0.** The read-data decode put each repeated register group (`PARAMETERIZED`) in its own `case` with `default: w_rdata_nxt = '0`, and these cases ran one after another, so the default of a later group cleared the read data of an earlier group. Only the last group could be read back (found when the `ro` register `mkv_e_chn` of the MKV block cipher IP read 0 while `mkv_d_chn` read the loaded value). Now every element of every repeated group is an item of the one read `case`, with one `default`; the read value of a register no longer depends on any other register. The ports, parameters and the write path do not change; the read data of fixed registers and of the last group are unchanged. | `sim/tests/generator_test` checks that the read decode has one `default` and one `case` and that every element is an item (27 of 27 checks); `sim/tests/golden_test --quick` passes; the three examples were regenerated; the MKV IP reads both channel chain registers back correctly. |
+| 3.3 | 2026-11 | `w_` prefix for the combinational mask and shorter `i_hw_clr_` ports; behavior unchanged | golden and protocol regressions |
+| 3.2 | 2026-11 | hardware clear for `wo` fields | golden, protocol and coverage regressions |
+| 3.1 | 2026-11 | `wo` field type | golden regression |
+| 3.0 | 2026-10 | AXI4-Lite and AHB-Lite register interfaces, outstanding policy, byte-lane writes, endian modes | protocol regression |
+
+Older versions are listed in the header of `CSR_Generation.py`.
 
 ## Repository layout
 
