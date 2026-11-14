@@ -24,10 +24,12 @@ Use `wo` for a software-writable field whose value must not be returned by a bus
 
 ```bash
 pip install openpyxl
-python CSR_Generation.py CSR_GOLDEN_FORMAT.xlsx AXIL_QUEUED --out build --project MyProject --author "Your Name (user)"
+python CSR_Generation.py CSR_GOLDEN_FORMAT.xlsx AXIL_QUEUED --out build --project MyProject --author "Your Name (user)" --vlsit-style
 ```
 
 The generated output contains `RTL/<module>.sv`, `RTL/filelist.f`, and `Debug/debug.json`. AXI4-Lite/AHB-Lite output also includes single-clock and dual-clock FIFO models under `RTL/models/`.
+
+`--vlsit-style` is optional. It formats the generated module and built-in FIFO models to follow `VLSIT_RTL_Design_Rule.md` v2, uses the VLSIT project-page header, shortens rule-controlled names, and adds the required parameter comments. It does not change the register map or bus behavior. Existing generator users may omit the option to retain their established naming and headers. Parameterized register reads use range decoders so their legal index checks do not expand into a long `if` chain.
 
 ### Verify
 
@@ -70,10 +72,12 @@ Dùng `wo` cho field software ghi được nhưng không được trả lại kh
 
 ```bash
 pip install openpyxl
-python CSR_Generation.py CSR_GOLDEN_FORMAT.xlsx AXIL_QUEUED --out build --project MyProject --author "Your Name (user)"
+python CSR_Generation.py CSR_GOLDEN_FORMAT.xlsx AXIL_QUEUED --out build --project MyProject --author "Your Name (user)" --vlsit-style
 ```
 
 Kết quả sinh gồm `RTL/<module>.sv`, `RTL/filelist.f` và `Debug/debug.json`. RTL AXI4-Lite/AHB-Lite có thêm model FIFO một clock và hai clock trong `RTL/models/`.
+
+`--vlsit-style` là tùy chọn. Tùy chọn này định dạng module và FIFO model tích hợp sẵn theo `VLSIT_RTL_Design_Rule.md` v2, dùng header có link VLSIT, rút gọn các tên theo rule và thêm comment bắt buộc cho parameter. Tùy chọn không đổi register map hoặc hành vi bus. Có thể bỏ tùy chọn để giữ cách đặt tên và header hiện tại. Đọc các nhóm register lặp theo dải địa chỉ bằng function giải mã, tránh sinh chuỗi `if` dài.
 
 ### Kiểm tra
 
@@ -96,6 +100,7 @@ Coverage regression sinh lại RTL của cả ba ví dụ từ workbook rồi ch
 
 | Version | Date | Change | Verification |
 |---|---|---|---|
+| 3.5 | 2026-11-08 | Add opt-in `--vlsit-style` output for VLSIT RTL compliance; use range-based functions to decode parameterized register groups without generated guarded-case chains; add functional comments, named AXI byte width, and retain original RTL statements in style formatting. Update project metadata in `Debug/debug.json`. | Generator regression 27/27 PASS; Golden quick regression PASS; generated cluster CSR rule check 0 errors and 1 justified HIE-02 warning; Verilator lint 0 errors and 2 unused AXI4-Lite PROT warnings. |
 | 3.4 | 2026-11-07 | **Fix: readable repeated registers returned 0.** The read-data decode put each repeated register group (`PARAMETERIZED`) in its own `case` with `default: w_rdata_nxt = '0`, and these cases ran one after another, so the default of a later group cleared the read data of an earlier group. Only the last group could be read back (found when the `ro` register `mkv_e_chn` of the MKV block cipher IP read 0 while `mkv_d_chn` read the loaded value). Now every element of every repeated group is an item of the one read `case`, with one `default`; the read value of a register no longer depends on any other register. The ports, parameters and the write path do not change; the read data of fixed registers and of the last group are unchanged. | `sim/tests/generator_test` checks that the read decode has one `default` and one `case` and that every element is an item (27 of 27 checks); `sim/tests/golden_test --quick` passes; the three examples were regenerated; the MKV IP reads both channel chain registers back correctly. |
 | 3.3 | 2026-11 | `w_` prefix for the combinational mask and shorter `i_hw_clr_` ports; behavior unchanged | golden and protocol regressions |
 | 3.2 | 2026-11 | hardware clear for `wo` fields | golden, protocol and coverage regressions |

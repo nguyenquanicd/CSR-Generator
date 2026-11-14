@@ -4,6 +4,46 @@ ASYNC_FIFO_MODULE = "m_csr_async_fifo"
 SYNC_FIFO_MODULE = "m_csr_sync_fifo"
 
 
+def build_parameterized_read_decode(reg_list, address_name):
+    """Build reusable range decoders for parameterized read-only register banks."""
+    functions = []
+    overrides = []
+    cases = []
+    for reg in reg_list:
+        if hasattr(reg, "base_offset"):
+            name = reg.name
+            result = f"w_{name}_decode"
+            functions.append(f'''  // Decode one parameterized register range without expanding guarded case items.
+  function automatic logic [32:0] w_decode_{name}(input logic [LPARA_ADDR_W-1:0] i_addr);
+    logic [31:0] w_idx;
+    begin
+      w_decode_{name} = '0;
+      w_idx = '0;
+      if ((32'(i_addr) >= {reg.base_parameter})
+          & (32'(i_addr) < ({reg.base_parameter} + ({reg.count_parameter} * {reg.stride_parameter})))
+          & (((32'(i_addr) - {reg.base_parameter}) % {reg.stride_parameter}) == 32'd0)) begin
+        w_idx = (32'(i_addr) - {reg.base_parameter}) / {reg.stride_parameter};
+        w_decode_{name} = {{1'b1, w_{name}_value[w_idx]}};
+      end
+    end
+  endfunction
+  assign {result} = w_decode_{name}({address_name});
+  assign w_{name}_decode_valid = {result}[32];
+  assign w_{name}_decode_data = {result}[31:0];
+''')
+            overrides.append(f'''    // Apply the matching parameterized register-bank result, if any.
+    if (w_{name}_decode_valid) begin
+      w_rdata_nxt = w_{name}_decode_data;
+      w_addr_mapped = 1'b1;
+    end
+''')
+        else:
+            cases.append((f"LPARA_{reg.name.upper()}_OFFSET",
+                          f"begin w_rdata_nxt = w_{reg.name}_value; w_addr_mapped = 1'b1; end"))
+    cases_rtl = "\n".join(f"      {address}: {body}" for address, body in cases)
+    return "".join(functions), cases_rtl, "".join(overrides)
+
+
 ASYNC_FIFO_MODEL = '''/*
  * Project      : APB-CSR-Generator
  * Function     : Dual-clock first-word-fall-through FIFO for CSR bus requests/responses.
@@ -181,7 +221,7 @@ class axil_protocol:
     """AXI4-Lite CSR front end with outstanding request queues."""
 
     def __init__(self, data_wd, addr_wd, async_option, strobe_mode, outstanding_mode,
-                 rd_depth, wr_depth, port, port_group):
+                 rd_depth, wr_depth, port, port_group, vlsit_style=False):
         self.data_wd = data_wd
         self.addr_wd = addr_wd
         self.async_option = int(async_option)
@@ -189,6 +229,7 @@ class axil_protocol:
         self.outstanding_mode = str(outstanding_mode).upper()
         self.rd_depth = int(rd_depth)
         self.wr_depth = int(wr_depth)
+        self.vlsit_style = bool(vlsit_style)
         self.port_groups = [
             port_group("AXI and register clocks", [
                 port("i_clk_axi", "input", 1), port("i_rst_n_axi", "input", 1),
@@ -240,6 +281,16 @@ class axil_protocol:
             "  localparam logic [31:0] LPARA_AXI_RD_LIMIT = (PARA_AXI_OUTSTANDING_MODE == 32'd2) ? ((PARA_AXI_RD_DEPTH > 32'd8) ? 32'd8 : ((PARA_AXI_RD_DEPTH < 32'd1) ? 32'd1 : PARA_AXI_RD_DEPTH)) : 32'd1,\n"
             "  localparam logic [31:0] LPARA_AXI_WR_LIMIT = (PARA_AXI_OUTSTANDING_MODE == 32'd2) ? ((PARA_AXI_WR_DEPTH > 32'd8) ? 32'd8 : ((PARA_AXI_WR_DEPTH < 32'd1) ? 32'd1 : PARA_AXI_WR_DEPTH)) : 32'd1,\n"
             "  localparam logic [31:0] LPARA_AXI_OUT_SINGLE = 32'd0")
+        if self.vlsit_style:
+            strb_w = self.data_wd // 8
+            self.extra_localparams = self.extra_localparams.replace(
+                "  localparam logic [31:0] LPARA_AXI_OUT_SINGLE = 32'd0",
+                f"  localparam logic [31:0] LPARA_AXI_RD_CMD_W = 32'd{self.addr_wd},\n"
+                f"  localparam logic [31:0] LPARA_AXI_WR_CMD_W = 32'd{self.addr_wd + self.data_wd + strb_w},\n"
+                f"  localparam logic [31:0] LPARA_AXI_RD_RSP_W = 32'd{self.data_wd + 2},\n"
+                "  localparam logic [31:0] LPARA_AXI_WR_RSP_W = 32'd2,\n"
+                "  localparam logic [31:0] LPARA_AXI_BYTE_W = 32'd8,\n"
+                "  localparam logic [31:0] LPARA_AXI_OUT_SINGLE = 32'd0")
         self.gen_logic(port)
 
     def gen_logic(self, port):
@@ -280,30 +331,46 @@ class axil_protocol:
         self.access = self._rtl()
 
     def prdata_rtl(self, reg_list):
-        cases = []
-        for r in reg_list:
-            if hasattr(r, "base_offset"):
-                for index in range(r.max_count):
-                    address = f"({r.base_parameter} + (32'd{index} * {r.stride_parameter}))"
-                    body = f"if ({r.count_parameter} > 32'd{index}) begin w_rdata_nxt = w_{r.name}_value[{index}]; w_addr_mapped = 1'b1; end"
-                    cases.append((address, body))
-            else:
-                cases.append((f"LPARA_{r.name.upper()}_OFFSET",
-                              f"begin w_rdata_nxt = w_{r.name}_value; w_addr_mapped = 1'b1; end"))
-        cases_rtl = "\n".join(f"      {address}: {body}" for address, body in cases)
+        functions = ""
+        overrides = ""
+        if self.vlsit_style:
+            functions, cases_rtl, overrides = build_parameterized_read_decode(reg_list, "reg_addr")
+        else:
+            cases = []
+            for r in reg_list:
+                if hasattr(r, "base_offset"):
+                    for index in range(r.max_count):
+                        address = f"({r.base_parameter} + (32'd{index} * {r.stride_parameter}))"
+                        body = f"if ({r.count_parameter} > 32'd{index}) begin w_rdata_nxt = w_{r.name}_value[{index}]; w_addr_mapped = 1'b1; end"
+                        cases.append((address, body))
+                else:
+                    cases.append((f"LPARA_{r.name.upper()}_OFFSET",
+                                  f"begin w_rdata_nxt = w_{r.name}_value; w_addr_mapped = 1'b1; end"))
+            cases_rtl = "\n".join(f"      {address}: {body}" for address, body in cases)
         self.rtl_prdata = (
             "\n  // Unmapped register addresses return zero and generate DECERR.\n"
+            + functions +
             "  always_comb begin : p_com_reg_read_decode\n"
             "    w_rdata_nxt = '0;\n    w_addr_mapped = 1'b0;\n"
             "    case (32'(reg_addr))\n" + cases_rtl +
             "\n      default: begin w_rdata_nxt = '0; w_addr_mapped = 1'b0; end\n"
-            "    endcase\n  end\n")
+            "    endcase\n" + overrides + "  end\n")
 
     def _rtl(self):
         aw = self.addr_wd
         dw = self.data_wd
         sw = self.data_wd // 8
         wrq_w = aw + dw + sw
+        if self.vlsit_style:
+            rd_cmd_w = "LPARA_AXI_RD_CMD_W"
+            wr_cmd_w = "LPARA_AXI_WR_CMD_W"
+            rd_rsp_w = "LPARA_AXI_RD_RSP_W"
+            wr_rsp_w = "LPARA_AXI_WR_RSP_W"
+        else:
+            rd_cmd_w = f"32'd{aw}"
+            wr_cmd_w = f"32'd{wrq_w}"
+            rd_rsp_w = f"32'd{dw + 2}"
+            wr_rsp_w = "32'd2"
         rtl = r'''
   // A single request, one-per-direction, or separately bounded read/write queues.
   assign w_write_candidate = i_axi_awvalid | i_axi_wvalid;
@@ -380,29 +447,29 @@ class axil_protocol:
   // Use CDC FIFOs only when the parameter selects asynchronous CSR operation.
   generate
     if (PARA_ASYNCHRONOUS == 32'd1) begin : g_async_axi_fifo
-      m_csr_async_fifo #(.PARA_DATA_W(32'd@AW@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_cmd_fifo (
+      m_csr_async_fifo #(.PARA_DATA_W(@RD_CMD_W@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_cmd_fifo (
         .i_clk_wr(i_clk_axi), .i_rst_n_wr(i_rst_n_axi), .i_w_valid(w_rd_cmd_w_valid), .o_w_ready(w_rd_cmd_w_ready), .i_w_data(w_rd_cmd_w_data),
         .i_clk_rd(w_clk_reg), .i_rst_n_rd(w_rst_n_reg), .o_r_valid(w_rd_cmd_r_valid), .i_r_ready(w_rd_cmd_r_ready), .o_r_data(w_rd_cmd_r_data));
-      m_csr_async_fifo #(.PARA_DATA_W(32'd@WRQ_W@), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_cmd_fifo (
+      m_csr_async_fifo #(.PARA_DATA_W(@WR_CMD_W@), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_cmd_fifo (
         .i_clk_wr(i_clk_axi), .i_rst_n_wr(i_rst_n_axi), .i_w_valid(w_wr_cmd_w_valid), .o_w_ready(w_wr_cmd_w_ready), .i_w_data(w_wr_cmd_w_data),
         .i_clk_rd(w_clk_reg), .i_rst_n_rd(w_rst_n_reg), .o_r_valid(w_wr_cmd_r_valid), .i_r_ready(w_wr_cmd_r_ready), .o_r_data(w_wr_cmd_r_data));
-      m_csr_async_fifo #(.PARA_DATA_W(32'd@DW2@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_rsp_fifo (
+      m_csr_async_fifo #(.PARA_DATA_W(@RD_RSP_W@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_rsp_fifo (
         .i_clk_wr(w_clk_reg), .i_rst_n_wr(w_rst_n_reg), .i_w_valid(w_rd_rsp_w_valid), .o_w_ready(w_rd_rsp_w_ready), .i_w_data(w_rd_rsp_w_data),
         .i_clk_rd(i_clk_axi), .i_rst_n_rd(i_rst_n_axi), .o_r_valid(w_rd_rsp_r_valid), .i_r_ready(w_rd_rsp_r_ready), .o_r_data(w_rd_rsp_r_data));
-      m_csr_async_fifo #(.PARA_DATA_W(32'd2), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_rsp_fifo (
+      m_csr_async_fifo #(.PARA_DATA_W(@WR_RSP_W@), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_rsp_fifo (
         .i_clk_wr(w_clk_reg), .i_rst_n_wr(w_rst_n_reg), .i_w_valid(w_wr_rsp_w_valid), .o_w_ready(w_wr_rsp_w_ready), .i_w_data(w_wr_rsp_w_data),
         .i_clk_rd(i_clk_axi), .i_rst_n_rd(i_rst_n_axi), .o_r_valid(w_wr_rsp_r_valid), .i_r_ready(w_wr_rsp_r_ready), .o_r_data(w_wr_rsp_r_data));
     end else begin : g_sync_axi_fifo
-      m_csr_sync_fifo #(.PARA_DATA_W(32'd@AW@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_cmd_fifo (
+      m_csr_sync_fifo #(.PARA_DATA_W(@RD_CMD_W@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_cmd_fifo (
         .i_clk(i_clk_axi), .i_rst_n(i_rst_n_axi), .i_w_valid(w_rd_cmd_w_valid), .o_w_ready(w_rd_cmd_w_ready), .i_w_data(w_rd_cmd_w_data),
         .o_r_valid(w_rd_cmd_r_valid), .i_r_ready(w_rd_cmd_r_ready), .o_r_data(w_rd_cmd_r_data));
-      m_csr_sync_fifo #(.PARA_DATA_W(32'd@WRQ_W@), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_cmd_fifo (
+      m_csr_sync_fifo #(.PARA_DATA_W(@WR_CMD_W@), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_cmd_fifo (
         .i_clk(i_clk_axi), .i_rst_n(i_rst_n_axi), .i_w_valid(w_wr_cmd_w_valid), .o_w_ready(w_wr_cmd_w_ready), .i_w_data(w_wr_cmd_w_data),
         .o_r_valid(w_wr_cmd_r_valid), .i_r_ready(w_wr_cmd_r_ready), .o_r_data(w_wr_cmd_r_data));
-      m_csr_sync_fifo #(.PARA_DATA_W(32'd@DW2@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_rsp_fifo (
+      m_csr_sync_fifo #(.PARA_DATA_W(@RD_RSP_W@), .PARA_DEPTH(LPARA_AXI_FIFO_RD_DEPTH)) u_axi_rd_rsp_fifo (
         .i_clk(i_clk_axi), .i_rst_n(i_rst_n_axi), .i_w_valid(w_rd_rsp_w_valid), .o_w_ready(w_rd_rsp_w_ready), .i_w_data(w_rd_rsp_w_data),
         .o_r_valid(w_rd_rsp_r_valid), .i_r_ready(w_rd_rsp_r_ready), .o_r_data(w_rd_rsp_r_data));
-      m_csr_sync_fifo #(.PARA_DATA_W(32'd2), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_rsp_fifo (
+      m_csr_sync_fifo #(.PARA_DATA_W(@WR_RSP_W@), .PARA_DEPTH(LPARA_AXI_FIFO_WR_DEPTH)) u_axi_wr_rsp_fifo (
         .i_clk(i_clk_axi), .i_rst_n(i_rst_n_axi), .i_w_valid(w_wr_rsp_w_valid), .o_w_ready(w_wr_rsp_w_ready), .i_w_data(w_wr_rsp_w_data),
         .o_r_valid(w_wr_rsp_r_valid), .i_r_ready(w_wr_rsp_r_ready), .o_r_data(w_wr_rsp_r_data));
     end
@@ -462,23 +529,30 @@ class axil_protocol:
 '''
         replacements = {
             "@AW@": str(aw), "@DW2@": str(dw + 2), "@WRQ_W@": str(wrq_w),
+            "@RD_CMD_W@": rd_cmd_w, "@WR_CMD_W@": wr_cmd_w,
+            "@RD_RSP_W@": rd_rsp_w, "@WR_RSP_W@": wr_rsp_w,
             "@WRQ_MSB@": str(aw + dw + sw - 1), "@WRQ_LSB@": str(dw + sw),
             "@WD_MSB@": str(dw + sw - 1), "@WD_LSB@": str(sw), "@STRB_MSB@": str(sw - 1)
         }
         for token, value in replacements.items():
             rtl = rtl.replace(token, value)
+        if self.vlsit_style:
+            rtl = rtl.replace("gen_lane * 8) +: 8]", "gen_lane * LPARA_AXI_BYTE_W) +: LPARA_AXI_BYTE_W]")
+            rtl = rtl.replace("{8{reg_wstrb[gen_lane]}}", "{LPARA_AXI_BYTE_W{reg_wstrb[gen_lane]}}")
         return rtl
 
 
 class ahblite_protocol:
     """AHB-Lite CSR front end; each accepted beat is translated independently."""
 
-    def __init__(self, data_wd, addr_wd, async_option, strobe_mode, endian_mode, port, port_group):
+    def __init__(self, data_wd, addr_wd, async_option, strobe_mode, endian_mode, port, port_group,
+                 vlsit_style=False):
         self.data_wd = data_wd
         self.addr_wd = addr_wd
         self.async_option = int(async_option)
         self.strobe_mode = str(strobe_mode).upper()
         self.endian_mode = str(endian_mode).upper()
+        self.vlsit_style = bool(vlsit_style)
         self.port_groups = [
             port_group("AHB and register clocks", [
                 port("i_clk_ahb", "input", 1), port("i_rst_n_ahb", "input", 1),
@@ -513,6 +587,11 @@ class ahblite_protocol:
             "  localparam logic [31:0] LPARA_AHB_ENDIAN_BE32 = 32'd2,\n"
             "  localparam logic [1:0] LPARA_AHB_RESP_OKAY = 2'd0,\n"
             "  localparam logic [1:0] LPARA_AHB_RESP_ERROR = 2'd1")
+        if self.vlsit_style:
+            self.extra_localparams = self.extra_localparams.replace(
+                "  localparam logic [1:0] LPARA_AHB_RESP_ERROR = 2'd1",
+                "  localparam logic [31:0] LPARA_AHB_BYTE_W = 32'd8,\n"
+                "  localparam logic [1:0] LPARA_AHB_RESP_ERROR = 2'd1")
         self.gen_logic(port)
 
     def gen_logic(self, port):
@@ -543,24 +622,30 @@ class ahblite_protocol:
         self.access = self._rtl()
 
     def prdata_rtl(self, reg_list):
-        cases = []
-        for r in reg_list:
-            if hasattr(r, "base_offset"):
-                for index in range(r.max_count):
-                    address = f"({r.base_parameter} + (32'd{index} * {r.stride_parameter}))"
-                    body = f"if ({r.count_parameter} > 32'd{index}) begin w_rdata_nxt = w_{r.name}_value[{index}]; w_addr_mapped = 1'b1; end"
-                    cases.append((address, body))
-            else:
-                cases.append((f"LPARA_{r.name.upper()}_OFFSET",
-                              f"begin w_rdata_nxt = w_{r.name}_value; w_addr_mapped = 1'b1; end"))
-        cases_rtl = "\n".join(f"      {address}: {body}" for address, body in cases)
+        functions = ""
+        overrides = ""
+        if self.vlsit_style:
+            functions, cases_rtl, overrides = build_parameterized_read_decode(reg_list, "reg_addr")
+        else:
+            cases = []
+            for r in reg_list:
+                if hasattr(r, "base_offset"):
+                    for index in range(r.max_count):
+                        address = f"({r.base_parameter} + (32'd{index} * {r.stride_parameter}))"
+                        body = f"if ({r.count_parameter} > 32'd{index}) begin w_rdata_nxt = w_{r.name}_value[{index}]; w_addr_mapped = 1'b1; end"
+                        cases.append((address, body))
+                else:
+                    cases.append((f"LPARA_{r.name.upper()}_OFFSET",
+                                  f"begin w_rdata_nxt = w_{r.name}_value; w_addr_mapped = 1'b1; end"))
+            cases_rtl = "\n".join(f"      {address}: {body}" for address, body in cases)
         self.rtl_prdata = (
             "\n  // Unmapped CSR addresses return zero and produce an AHB ERROR response.\n"
+            + functions +
             "  always_comb begin : p_com_ahb_reg_read_decode\n"
             "    w_rdata_nxt = '0;\n    w_addr_mapped = 1'b0;\n"
             "    case (32'(reg_addr))\n" + cases_rtl +
             "\n      default: begin w_rdata_nxt = '0; w_addr_mapped = 1'b0; end\n"
-            "    endcase\n  end\n")
+            "    endcase\n" + overrides + "  end\n")
 
     def _rtl(self):
         aw = self.addr_wd
@@ -750,4 +835,7 @@ class ahblite_protocol:
         }
         for token, value in replacements.items():
             rtl = rtl.replace(token, value)
+        if self.vlsit_style:
+            rtl = rtl.replace("gen_lane * 8) +: 8]", "gen_lane * LPARA_AHB_BYTE_W) +: LPARA_AHB_BYTE_W]")
+            rtl = rtl.replace("{8{reg_wstrb[gen_lane]}}", "{LPARA_AHB_BYTE_W{reg_wstrb[gen_lane]}}")
         return rtl

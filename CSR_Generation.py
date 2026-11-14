@@ -4,6 +4,7 @@
 # Function: CSR Generation Tool
 # Page: VLSI Technology
 #
+# Version 3.5 (2026-11-08): add opt-in VLSIT RTL rule formatting for generated AXI4-Lite CSR.
 # Version 3.4 (2026-11-07): fix of the read-data decode of repeated (PARAMETERIZED) registers.
 #   Symptom: a readable (ro) repeated register read back 0 when another repeated group came after it
 #   (example: mkv_e_chn of the MKV IP, while mkv_d_chn, the last group, was correct).
@@ -43,7 +44,7 @@ from datetime import date, datetime
 from CSR_Protocol_Generation import (ASYNC_FIFO_MODEL, ASYNC_FIFO_MODULE, SYNC_FIFO_MODEL,
                                     SYNC_FIFO_MODULE, ahblite_protocol, axil_protocol)
 
-VERSION = "3.4"
+VERSION = "3.5"
 RSVD_KEY = 'reserved'
 VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c', 'wo'}
 FLOW_NAME = "VLSIT RTL Generator AI Automation Flow"
@@ -96,6 +97,239 @@ def reset_literal(value, width, label):
 def range_text(width):
     """Packed range of a field port: empty for one bit (rule TYP-06)."""
     return f"[{width - 1}:0]" if width > 1 else ""
+
+
+def apply_vlsit_rtl_style(rtl, project, author):
+    """Apply rule-compliant naming and parameter documentation to generated RTL."""
+    names = {
+        "LPARA_PMU_COUNT_LO_OFFSET_STRIDE": "LPARA_PMU_CNT_LO_STRIDE",
+        "LPARA_PMU_COUNT_HI_OFFSET_STRIDE": "LPARA_PMU_CNT_HI_STRIDE",
+        "i_hw_wdata_pmu_ctrl_snapshot_done": "i_hw_wdata_pmu_snap_done",
+        "PARA_WRITE_STROBE_MODE": "PARA_WSTRB_MODE",
+        "o_irq_en_overflow_enable": "o_irq_en_overflow_en",
+        "reg_irq_en_overflow_enable": "reg_irq_en_overflow_en",
+        "w_irq_en_overflow_enable_nxt": "w_irq_en_overflow_en_nxt",
+        "o_pmu_evt_enable": "o_pmu_evt_en",
+        "reg_pmu_evt_enable": "reg_pmu_evt_en",
+        "w_pmu_evt_enable_nxt": "w_pmu_evt_en_nxt",
+        "reg_axi_rr_read_nxt": "w_axi_rr_rd_nxt",
+        "reg_axi_rr_read": "reg_axi_rr_rd",
+        "reg_axi_accept_read": "reg_axi_accept_rd",
+        "w_write_candidate": "w_wr_candidate",
+        "w_issue_read": "w_issue_rd",
+        "w_issue_write": "w_issue_wr",
+        "p_com_reg_read_decode": "p_com_reg_rd_decode",
+        "reg_addr": "w_addr",
+        "reg_wdata": "w_wdata",
+        "reg_wstrb": "w_wstrb",
+    }
+    for old, new in names.items():
+        rtl = re.sub(rf"\b{re.escape(old)}\b", new, rtl)
+    rtl = rtl.replace("AI Flow Page : https://github.com/nguyenquanicd/APB-CSR-Generator",
+                      "AI Flow Page : https://github.com/nguyenquanicd/VLSIT_RTL_Generator_AI_Model")
+    issue_response = (
+        "  assign w_issue_resp = (w_issue_addr[1:0] != 2'b00) ? 2'(LPARA_AXI_RESP_SLVERR)\n"
+        "                      : (~w_addr_mapped ? 2'(LPARA_AXI_RESP_DECERR)\n"
+        "                      : ((w_issue_wr & (PARA_WSTRB_MODE == 32'd1) & ~(&w_issue_wstrb))\n"
+        "                         ? 2'(LPARA_AXI_RESP_SLVERR) : 2'(LPARA_AXI_RESP_OKAY)));\n"
+    )
+    rtl = re.sub(r"  assign w_issue_resp = .*?;\n", issue_response, rtl, count=1, flags=re.S)
+    rtl = rtl.replace("w_issue_resp == LPARA_AXI_RESP_OKAY",
+                      "w_issue_resp == 2'(LPARA_AXI_RESP_OKAY)")
+    comment_points = (
+        ("  assign o_axi_arready =", "  // Gate AXI4-Lite address acceptance by queue capacity and ordering.\n"),
+        ("  assign o_axi_awready =", "  // Accept the write address only when its data and response capacity can be preserved.\n"),
+        ("  assign o_axi_wready =", "  // Accept write data independently while preserving the AW/W pairing.\n"),
+        ("  assign w_ar_hs =", "  // Derive AXI4-Lite handshakes used by queue and outstanding accounting.\n"),
+        ("  assign o_axi_rvalid =", "  // Route queued read and write responses to the AXI4-Lite master.\n"),
+        ("  assign w_rd_cmd_r_ready =", "  // Consume the selected command and recover its address and write payload.\n"),
+        ("  assign w_rd_en =", "  // Generate CSR side effects only for successful decoded accesses.\n"),
+        ("  always_ff @(posedge w_clk_reg, negedge w_rst_n_reg) begin : p_ff_axi_rr",
+         "  // Advance the read/write priority after each accepted CSR operation.\n"),
+        ("  generate\n    for (genvar gen_lane = 0; gen_lane < LPARA_STRB_W; gen_lane++) begin : gen_axi_wmask",
+         "  // Expand each byte strobe into the corresponding data mask.\n"
+         "  generate\n    for (genvar gen_lane = 0; gen_lane < LPARA_STRB_W; gen_lane++) begin : gen_axi_wmask"),
+        ("  always_comb begin : p_com_reg_rd_decode",
+         "  // Select the CSR read value and mapped-address status.\n"
+         "  always_comb begin : p_com_reg_rd_decode"),
+        ("  assign o_pmu_evt_event_id = reg_pmu_evt_event_id;",
+         "  // Expose the configured PMU event selector fields to the cluster.\n"
+         "  assign o_pmu_evt_event_id = reg_pmu_evt_event_id;"),
+    )
+    for marker, replacement in comment_points:
+        # Keep the original RTL statement after inserting its explanatory comment.
+        # Some replacements already include the marker (for multi-line constructs).
+        if replacement.endswith(marker):
+            rtl = rtl.replace(marker, replacement, 1)
+        else:
+            rtl = rtl.replace(marker, replacement + marker, 1)
+    rtl = re.sub(
+        r"(?m)^(\s*)assign (w_we_[A-Za-z0-9_]+\[gen_idx\]) =",
+        r"\1// Decode the software write for this parameterized register index.\n\1assign \2 =",
+        rtl, count=1)
+    rtl = re.sub(
+        r"(?m)^(\s*)assign (w_[A-Za-z0-9_]+_nxt\[gen_idx\]) =",
+        r"\1// Merge byte-strobed software data with the current PMU field state.\n\1assign \2 =",
+        rtl, count=1)
+    rtl = re.sub(
+        r"(?m)^(\s*)always_comb begin : (p_com_(?:pmu_evt|pmu_count_lo|pmu_count_hi)_value)",
+        r"\1// Pack this PMU register group's fields into the read-data vector.\n\1always_comb begin : \2",
+        rtl)
+    rtl = re.sub(
+        r"(?m)^(\s*)assign (w_[A-Za-z0-9_]+_decode) = (w_decode_[A-Za-z0-9_]+\()",
+        r"\1// Decode the parameterized address range and retain valid/data fields.\n\1assign \2 = \3",
+        rtl)
+    issue_block = ("  // Round-robin service resets to read and does not block a direction whose response FIFO is full.\n"
+                   "  always_comb begin : p_com_axi_issue\n"
+                   "    w_issue_rd = 1'b0;\n"
+                   "    w_issue_wr = 1'b0;\n"
+                   "    if (w_rd_cmd_r_valid & w_rd_rsp_w_ready & w_wr_cmd_r_valid & w_wr_rsp_w_ready) begin\n"
+                   "      if (reg_axi_rr_rd)\n"
+                   "        w_issue_rd = 1'b1;\n"
+                   "      else\n"
+                   "        w_issue_wr = 1'b1;\n"
+                   "    end else if (w_rd_cmd_r_valid & w_rd_rsp_w_ready) begin\n"
+                   "      w_issue_rd = 1'b1;\n"
+                   "    end else if (w_wr_cmd_r_valid & w_wr_rsp_w_ready) begin\n"
+                   "      w_issue_wr = 1'b1;\n"
+                   "    end\n"
+                   "  end\n")
+    issue_block_vlsit = ("  // Round-robin service chooses one eligible read or write request.\n"
+                         "  always_comb begin : p_com_axi_issue\n"
+                         "    w_issue_rd = 1'b0;\n"
+                         "    w_issue_wr = 1'b0;\n"
+                         "    casez ({(w_rd_cmd_r_valid & w_rd_rsp_w_ready),\n"
+                         "             (w_wr_cmd_r_valid & w_wr_rsp_w_ready), reg_axi_rr_rd})\n"
+                         "      3'b111: w_issue_rd = 1'b1;\n"
+                         "      3'b110: w_issue_wr = 1'b1;\n"
+                         "      3'b10?: w_issue_rd = 1'b1;\n"
+                         "      3'b01?: w_issue_wr = 1'b1;\n"
+                         "      default: begin\n"
+                         "        w_issue_rd = 1'b0;\n"
+                         "        w_issue_wr = 1'b0;\n"
+                         "      end\n"
+                         "    endcase\n"
+                         "  end\n")
+    rtl = rtl.replace(issue_block, issue_block_vlsit)
+    rtl = re.sub(r"\.i_clk\(", ".i_clk_bus(", rtl)
+    rtl = re.sub(r"\.i_rst_n\(", ".i_rst_n_bus(", rtl)
+    rtl = rtl.replace("      assign w_wmask[",
+                      "      // Expand this byte lane's write strobe into its data-bit mask.\n"
+                      "      assign w_wmask[", 1)
+
+    # The first description line must be explicitly identified for every generated parameter.
+    rtl = re.sub(
+        r"  // (?!Parameter Description:)([^\n]+)\n(  // Parameter values:[^\n]+\n  // Parameter unit:[^\n]+\n  parameter logic \[31:0\] PARA_(?:AXI_OUTSTANDING_MODE|AXI_RD_DEPTH|AXI_WR_DEPTH|WSTRB_MODE) =)",
+        r"  // Parameter Description: \1\n\2",
+        rtl)
+    # VLSIT requires 32-bit localparams, including values used as AXI response codes.
+    rtl = re.sub(r"localparam logic \[1:0\] (LPARA_[A-Z0-9_]+) = 2'd([0-9]+)",
+                 r"localparam logic [31:0] \1 = 32'd\2", rtl)
+
+    header = ("/*\n"
+              f" * Project      : {project}\n"
+              f" * Author       : {author}\n"
+              f" * AI Flow      : {FLOW_NAME}\n"
+              " * AI Flow Page : https://github.com/nguyenquanicd/VLSIT_RTL_Generator_AI_Model\n"
+              f" * Date         : {date.today().isoformat()}\n"
+              " * Description  : Generated synthesizable CSR RTL; see the workbook for the register map.\n"
+              f" *                Generated by APB-CSR-Generator v{VERSION} with --vlsit-style.\n"
+              " *                The RTL follows the VLSIT RTL Design Rule v2.\n"
+              " */\n")
+    return re.sub(r"\A/\*.*?\*/\s*", header, rtl, count=1, flags=re.S)
+
+
+def apply_vlsit_fifo_model_style(rtl, project, author, description, async_model):
+    """Format the built-in FIFO model as standalone VLSIT RTL without changing behavior."""
+    header = ("/*\n"
+              f" * Project      : {project}\n"
+              f" * Author       : {author}\n"
+              f" * AI Flow      : {FLOW_NAME}\n"
+              " * AI Flow Page : https://github.com/nguyenquanicd/VLSIT_RTL_Generator_AI_Model\n"
+              f" * Date         : {date.today().isoformat()}\n"
+              f" * Description  : {description}\n"
+              " *                Behavioral model only; replace with a technology-qualified FIFO when required.\n"
+              " *                The RTL follows the VLSIT RTL Design Rule v2.\n"
+              " */\n")
+    rtl = re.sub(r"\A/\*.*?\*/\s*", header, rtl, count=1, flags=re.S)
+    rtl = rtl.replace("parameter logic [31:0] PARA_DATA_W = 32'd32,",
+                      "// Parameter Description: width of each FIFO entry.\n"
+                      "  // Parameter values: 1 or greater; default is 32.\n"
+                      "  // Parameter unit: bits\n"
+                      "  parameter logic [31:0] PARA_DATA_W = 32'd32,")
+    rtl = rtl.replace("parameter logic [31:0] PARA_DEPTH = 32'd2,",
+                      "// Parameter Description: number of FIFO entries; must be a power of two.\n"
+                      "  // Parameter values: 2 or greater; default is 2.\n"
+                      "  // Parameter unit: entries\n"
+                      "  parameter logic [31:0] PARA_DEPTH = 32'd2,")
+    rtl = rtl.replace("reg_rd_bin_wr_sync", "w_rd_bin_wr_sync")
+    rtl = rtl.replace("reg_wr_bin_rd_sync", "w_wr_bin_rd_sync")
+    if async_model:
+        rtl = rtl.replace("  // Standard reflected-Gray pointer comparisons detect full and empty.\n",
+                          "  // Convert synchronized Gray pointers to binary for local-domain occupancy checks.\n"
+                          "  // Standard reflected-Gray pointer comparisons detect full and empty.\n")
+        rtl = rtl.replace("  always_ff @(posedge i_clk_rd, negedge i_rst_n_rd) begin : p_ff_wr_gray_sync",
+                          "  // Synchronize the write pointer into the read clock domain.\n"
+                          "  always_ff @(posedge i_clk_rd, negedge i_rst_n_rd) begin : p_ff_wr_gray_sync", 1)
+        rtl = rtl.replace("  assign w_wr_bin_nxt =", "  // Compute next binary and Gray pointer values from accepted FIFO transfers.\n"
+                          "  assign w_wr_bin_nxt =", 1)
+        rtl = rtl.replace("  assign w_rd_bin_wr_sync[LPARA_PTR_W-1] =", "  // Convert synchronized Gray pointers to binary values for full/empty comparisons.\n"
+                          "  assign w_rd_bin_wr_sync[LPARA_PTR_W-1] =", 1)
+        rtl = rtl.replace("      assign w_rd_bin_wr_sync[gen_ptr] =",
+                          "      // Convert each lower pointer bit from the synchronized Gray value.\n"
+                          "      assign w_rd_bin_wr_sync[gen_ptr] =", 1)
+        rtl = rtl.replace("  assign w_full =",
+                          "  // Detect FIFO full/empty and derive the two ready/valid outputs.\n"
+                          "  assign w_full =", 1)
+    else:
+        rtl = rtl.replace("  assign o_r_valid =", "  // Derive FIFO handshake state and expose the current first-word-fall-through entry.\n"
+                          "  assign o_r_valid =", 1)
+        rtl = rtl.replace("  input  wire                    i_clk,", "  input  wire                    i_clk_bus,")
+        rtl = rtl.replace("  input  wire                    i_rst_n,", "  input  wire                    i_rst_n_bus,")
+        rtl = re.sub(r"\bi_clk\b", "i_clk_bus", rtl)
+        rtl = re.sub(r"\bi_rst_n\b", "i_rst_n_bus", rtl)
+
+    # Rewrite only the ANSI port list so columns and functional groups are deterministic.
+    if async_model:
+        groups = [
+            port_group("Write-side clock, reset, and data input", [
+                port("i_clk_wr", "input", 1), port("i_rst_n_wr", "input", 1),
+                port("i_w_valid", "input", 1), port("o_w_ready", "output", 1),
+                port("i_w_data", "input", 32, "[PARA_DATA_W-1:0]")]),
+            port_group("Read-side clock, reset, and data output", [
+                port("i_clk_rd", "input", 1), port("i_rst_n_rd", "input", 1),
+                port("o_r_valid", "output", 1), port("i_r_ready", "input", 1),
+                port("o_r_data", "output", 32, "[PARA_DATA_W-1:0]")])]
+    else:
+        groups = [
+            port_group("FIFO clock and reset", [
+                port("i_clk_bus", "input", 1), port("i_rst_n_bus", "input", 1)]),
+            port_group("FIFO write interface", [
+                port("i_w_valid", "input", 1), port("o_w_ready", "output", 1),
+                port("i_w_data", "input", 32, "[PARA_DATA_W-1:0]")]),
+            port_group("FIFO read interface", [
+                port("o_r_valid", "output", 1), port("i_r_ready", "input", 1),
+                port("o_r_data", "output", 32, "[PARA_DATA_W-1:0]")])]
+    ports = ports_rtl(groups).rstrip()
+    rtl, replacements = re.subn(r"\) \(\n.*?\n\);", ") (\n" + ports + "\n);", rtl, count=1, flags=re.S)
+    if replacements != 1:
+        raise ValueError("Could not find FIFO model ANSI port list for VLSIT formatting")
+    return rtl
+
+
+def apply_vlsit_sync_model_style(rtl, project, author):
+    """Give the generated synchronizer model the requested project header."""
+    header = ("/*\n"
+              f" * Project      : {project}\n"
+              f" * Author       : {author}\n"
+              f" * AI Flow      : {FLOW_NAME}\n"
+              " * AI Flow Page : https://github.com/nguyenquanicd/VLSIT_RTL_Generator_AI_Model\n"
+              f" * Date         : {date.today().isoformat()}\n"
+              " * Description  : Behavioral synchronizer model for the generated CSR.\n"
+              " *                Replace with a technology-qualified synchronizer before tape-out.\n"
+              " *                The RTL follows the VLSIT RTL Design Rule v2.\n"
+              " */\n")
+    return re.sub(r"\A/\*.*?\*/\s*", header, rtl, count=1, flags=re.S)
 
 
 class port:
@@ -304,7 +538,7 @@ class bit:
 class parameterized_register:
     """A register bank whose count is selected by an elaboration parameter."""
     def __init__(self, name, offset, reset, description, bit_list, clock, reset_n,
-                 count_default, offset_stride, max_count):
+                 count_default, offset_stride, max_count, vlsit_style=False):
         self.name = name
         self.base_offset = int(offset)
         self.offset = offset_text(self.base_offset)
@@ -316,6 +550,7 @@ class parameterized_register:
         self.count_default = int(count_default)
         self.offset_stride = int(offset_stride)
         self.max_count = int(max_count)
+        self.vlsit_style = bool(vlsit_style)
         self.count_parameter = f"PARA_{self.name.upper()}_COUNT"
         self.base_parameter = f"LPARA_{self.name.upper()}_BASE_OFFSET"
         self.stride_parameter = f"LPARA_{self.name.upper()}_OFFSET_STRIDE"
@@ -363,6 +598,10 @@ class parameterized_register:
             self.logic_list.append(port(f"w_rd_{n}", "logic", self.count_default, f"[{self.count_parameter}-1:0]"))
         self.logic_list.append(port(f"w_{n}_value", "logic", self.count_default * 32,
                                     f"[{self.count_parameter}-1:0][LPARA_DATA_W-1:0]"))
+        if self.vlsit_style:
+            self.logic_list.append(port(f"w_{n}_decode", "logic", 33, "[32:0]"))
+            self.logic_list.append(port(f"w_{n}_decode_valid", "logic", 1))
+            self.logic_list.append(port(f"w_{n}_decode_data", "logic", 32, "[LPARA_DATA_W-1:0]"))
         self.we_rtl = f'''  // Decode a software write independently for every generated register index.
   generate
   for (genvar gen_idx = 0; (gen_idx < {self.count_parameter}) && (gen_idx < {self.max_parameter}); gen_idx++) begin : gen_{n}_we_decode
@@ -796,14 +1035,16 @@ class sfr:
                 strobe_mode=self.config.get('strobe_mode', 'HONOR'),
                 outstanding_mode=self.config.get('outstanding_mode', 'SINGLE'),
                 rd_depth=self.config.get('rd_depth', 2), wr_depth=self.config.get('wr_depth', 2),
-                port=port, port_group=port_group)
+                port=port, port_group=port_group,
+                vlsit_style=bool(self.config.get('vlsit_style', False)))
         elif self.protocol_name in {'AHB', 'AHB-LITE', 'AHB_LITE'}:
             self.protocol_name = 'AHB-Lite'
             self.protocol = ahblite_protocol(
                 data_wd=data_wd, addr_wd=addr_wd, async_option=async_option,
                 strobe_mode=self.config.get('strobe_mode', 'HONOR'),
                 endian_mode=self.config.get('ahb_endian', 'LITTLE'),
-                port=port, port_group=port_group)
+                port=port, port_group=port_group,
+                vlsit_style=bool(self.config.get('vlsit_style', False)))
         else:
             print(f"ERROR: protocol {protocol} is not implemented")
             sys.exit(1)
@@ -860,7 +1101,7 @@ class sfr:
 
         reg_json = reg_json[:-2]
         self.json = f'''    {bracket_o}
-    "Project": "APB-CSR-Generator",
+    "Project": "{self.project}",
     "Module": "JSON debug file",
     "Function": "Used to check the configuration after generation",
     "Author": "{self.author}",
@@ -1106,6 +1347,8 @@ def main():
     parser.add_argument("--out", default=os.getcwd(), help="folder that receives RTL/ and Debug/ (default: current folder)")
     parser.add_argument("--project", default="APB-CSR-Generator", help="Project field of the file header")
     parser.add_argument("--author", default=None, help="Author field of the file header, '<name> (user)'")
+    parser.add_argument("--vlsit-style", action="store_true",
+                        help="format generated RTL to follow VLSIT_RTL_Design_Rule.md v2")
     args = parser.parse_args()
 
     print("Start the CSR Generation!")
@@ -1125,6 +1368,7 @@ def main():
     cfg.setdefault('wr_depth', 2)
     cfg.setdefault('ahb_endian', 'LITTLE')
     cfg.setdefault('reg_event_sideband', 0)
+    cfg['vlsit_style'] = bool(args.vlsit_style)
     cfg['protocol'] = str(cfg['protocol']).strip()
     cfg['strobe_mode'] = str(cfg['strobe_mode']).upper()
     cfg['outstanding_mode'] = str(cfg['outstanding_mode']).upper()
@@ -1304,7 +1548,8 @@ def main():
             reg = parameterized_register(name=base_name, offset=base_offset, reset=rr["reset"],
                                          description=rr["description"], bit_list=make_bit_list(base_name),
                                          clock=clock, reset_n=reset_n, count_default=count,
-                                         offset_stride=stride, max_count=max_count)
+                                         offset_stride=stride, max_count=max_count,
+                                         vlsit_style=args.vlsit_style)
             reg.repeat_mode = mode
             reg_list.append(reg)
         else:
@@ -1334,6 +1579,8 @@ def main():
     s = sfr(cfg['module_name'], cfg['addr_wd'], cfg['data_wd'], reg_list, cfg['protocol'], cfg['async_option'],
             sheet=args.sheet, project=args.project, author=args.author, config=cfg)
     s.gen_rtl()
+    if args.vlsit_style:
+        s.rtl = apply_vlsit_rtl_style(s.rtl, args.project, s.author)
 
     out = os.path.abspath(args.out)
     print("The output path: ", out)
@@ -1344,12 +1591,23 @@ def main():
         f.write(s.rtl)
     models_path = rtl_path + '/models'
     os.makedirs(models_path, exist_ok=True)
+    sync_model = SYNC_MODEL
+    if args.vlsit_style:
+        sync_model = apply_vlsit_sync_model_style(sync_model, args.project, s.author)
     # Keep any library wrapper already installed at this path; otherwise create the model.
-    if os.path.exists(models_path + '/' + SYNC_MODULE + '.sv'):
-        print(f"Keep the existing models/{SYNC_MODULE}.sv")
+    sync_model_path = models_path + '/' + SYNC_MODULE + '.sv'
+    if os.path.exists(sync_model_path):
+        with open(sync_model_path, 'r') as f:
+            existing_sync_model = f.read()
+        if args.vlsit_style and "Behavioral synchronizer model of the generated CSR." in existing_sync_model:
+            with open(sync_model_path, 'w') as f:
+                f.write(sync_model)
+            print(f"Regenerated built-in models/{SYNC_MODULE}.sv")
+        else:
+            print(f"Keep the existing models/{SYNC_MODULE}.sv")
     else:
-        with open(models_path + '/' + SYNC_MODULE + '.sv', 'w') as f:
-            f.write(SYNC_MODEL)
+        with open(sync_model_path, 'w') as f:
+            f.write(sync_model)
     with open(rtl_path + '/filelist.f', 'w') as f:
         f.write('// filelist.f - generated by APB-CSR-Generator; paths are relative to the folder of this file.\n')
         f.write(f'models/{SYNC_MODULE}.sv\n')
@@ -1360,10 +1618,20 @@ def main():
     if s.protocol_name in {'AXI4-Lite', 'AHB-Lite'}:
         fifo_model_path = models_path + '/' + ASYNC_FIFO_MODULE + '.sv'
         with open(fifo_model_path, 'w') as f:
-            f.write(ASYNC_FIFO_MODEL)
+            fifo_rtl = ASYNC_FIFO_MODEL
+            if args.vlsit_style:
+                fifo_rtl = apply_vlsit_fifo_model_style(
+                    fifo_rtl, args.project, s.author,
+                    "Dual-clock first-word-fall-through FIFO for CSR bus requests and responses.", True)
+            f.write(fifo_rtl)
         sync_fifo_model_path = models_path + '/' + SYNC_FIFO_MODULE + '.sv'
         with open(sync_fifo_model_path, 'w') as f:
-            f.write(SYNC_FIFO_MODEL)
+            fifo_rtl = SYNC_FIFO_MODEL
+            if args.vlsit_style:
+                fifo_rtl = apply_vlsit_fifo_model_style(
+                    fifo_rtl, args.project, s.author,
+                    "Single-clock first-word-fall-through FIFO for CSR bus requests and responses.", False)
+            f.write(fifo_rtl)
 
     s.gen_json()
     debug_path = out + "/Debug"
