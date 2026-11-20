@@ -4,6 +4,8 @@
 # Function: CSR Generation Tool
 # Page: VLSI Technology
 #
+# Version 3.6 (2026-11-21): validate field ranges and parameterized counts, support APB 8/16/32-bit
+#   alignment, clarify byte-strobe handling, fix the debug JSON key, and serialize JSON safely.
 # Version 3.5 (2026-11-08): add opt-in VLSIT RTL rule formatting for generated AXI4-Lite CSR.
 # Version 3.4 (2026-11-07): fix of the read-data decode of repeated (PARAMETERIZED) registers.
 #   Symptom: a readable (ro) repeated register read back 0 when another repeated group came after it
@@ -36,6 +38,7 @@
 
 import argparse
 import getpass
+import json
 import os
 import re
 import shutil
@@ -44,7 +47,7 @@ from datetime import date, datetime
 from CSR_Protocol_Generation import (ASYNC_FIFO_MODEL, ASYNC_FIFO_MODULE, SYNC_FIFO_MODEL,
                                     SYNC_FIFO_MODULE, ahblite_protocol, axil_protocol)
 
-VERSION = "3.5"
+VERSION = "3.6"
 RSVD_KEY = 'reserved'
 VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c', 'wo'}
 FLOW_NAME = "VLSIT RTL Generator AI Automation Flow"
@@ -52,14 +55,22 @@ FLOW_PAGE = "https://github.com/nguyenquanicd/APB-CSR-Generator"
 SYNC_MODULE = "m_csr_sync"
 
 
+def parse_bit_range(field):
+    """Parse a packed SystemVerilog bit or descending range such as [7] or [31:16]."""
+    text = str(field).strip()
+    match = re.fullmatch(r"\[\s*(\d+)\s*(?::\s*(\d+)\s*)?\]", text)
+    if not match:
+        raise ValueError(f"bit range must use [bit] or [msb:lsb] syntax; got {field!r}")
+    msb = int(match.group(1))
+    lsb = int(match.group(2)) if match.group(2) is not None else msb
+    if msb < lsb:
+        raise ValueError(f"bit range must descend from msb to lsb; got {field!r}")
+    return msb, lsb
+
+
 def bit_width(field):
-    if ":" in field:
-        temp = field.replace("[", "")
-        temp = temp.replace("]", "")
-        temp = temp.split(':')
-        return int(temp[0]) - int(temp[1]) + 1
-    else:
-        return 1
+    msb, lsb = parse_bit_range(field)
+    return msb - lsb + 1
 
 
 def parse_number(value, label):
@@ -673,6 +684,12 @@ class parameterized_register:
 '''
         self.rtl = f'''
   // Parameterized register group {n}: indexed field updates and per-copy storage.
+  // Flag parameter overrides outside the declared bank size; legal values omit this branch.
+  generate
+    if (({self.count_parameter} < 32'd1) || ({self.count_parameter} > {self.max_parameter})) begin : gen_{n}_invalid_count
+      initial $error("{self.count_parameter} must be between 1 and {self.max_count}");
+    end
+  endgenerate
   generate
     for (genvar gen_idx = 0; (gen_idx < {self.count_parameter}) && (gen_idx < {self.max_parameter}); gen_idx++) begin : gen_{n}
 {next_part}    always_comb begin : p_com_{n}_value
@@ -690,6 +707,11 @@ class apb_protocol:
         self.data_wd = data_wd
         self.addr_wd = addr_wd
         self.async_option = int(async_option)
+        align_bits = (data_wd // 8).bit_length() - 1
+        self.addr_misaligned_expr = (
+            "1'b0" if align_bits == 0 else f"(|i_apb_paddr[{align_bits - 1}:0])")
+        self.addr_aligned_expr = (
+            "1'b1" if align_bits == 0 else f"(reg_addr[{align_bits - 1}:0] == {align_bits}'b0)")
         self.clk_bus = "i_clk_apb"
         self.rst_bus = "i_rst_n_apb"
         self.clk_reg = "i_clk_reg"
@@ -740,13 +762,12 @@ class apb_protocol:
         cb, rb = self.clk_bus, self.rst_bus
         self.access = f"""
   // APB decode: the SETUP phase is PSEL high and PENABLE low and lasts one cycle per transfer.
-  // A transfer is in error when the protection, the word alignment or the byte strobes fail
-  // while i_slverr_en is 1.
+  // i_slverr_en enables error responses. When disabled, PSTRB still selects the bytes written.
   assign w_apb_setup    = i_apb_psel & ~i_apb_penable;
   assign w_apb_prot_ok  = i_protect_en ? ~i_apb_pprot[1] : 1'b1;
-  assign w_apb_slverr   = i_slverr_en ? (~w_apb_prot_ok
-                                         | (|i_apb_paddr[1:0])
-                                         | (~&i_apb_pstrb[LPARA_STRB_W-1:0] & i_apb_pwrite)) : 1'b0;
+  assign w_apb_slverr   = i_slverr_en & (~w_apb_prot_ok
+                                         | {self.addr_misaligned_expr}
+                                         | (~&i_apb_pstrb[LPARA_STRB_W-1:0] & i_apb_pwrite));
 
   // Transfer without error, split into a write and a read.
   assign w_apb_complete = w_apb_setup & ~w_apb_slverr;
@@ -769,7 +790,7 @@ class apb_protocol:
       reg_wdata <= i_apb_pwdata;
   end
 
-  // Write byte strobes are captured with the write payload and expanded to field-bit masks.
+  // Capture PSTRB independently of i_slverr_en; it always masks the bytes updated by a write.
   always_ff @(posedge {cb}, negedge {rb}) begin : p_ff_wstrb
     if (!{rb})
       reg_wstrb <= '0;
@@ -1073,60 +1094,51 @@ class sfr:
                 self.logic_rtl += lr.logic_rtl()
 
     def gen_json(self):
-        reg_json = ''
-        bracket_o = "{"
-        bracket_c = "}"
+        register_rows = []
         for r in self.reg_list:
-            bit_json = ''
-            reg_json += f'''        {bracket_o}
-        "Register Name": "{r.name}",
-        "Offset": "{r.offset}",
-        "Repeat Mode": "{getattr(r, 'repeat_mode', 'NONE')}",
-        "Count or Default": "{getattr(r, 'count_default', 1)}",
-        "Offset Stride": "{getattr(r, 'offset_stride', 0)}",
-        "Maximum Count": "{getattr(r, 'max_count', 1)}",
-        "Reset Value": "{r.reset}",
-        "Descriprtion": "{r.description}",
-        "Bits": ['''
-            for b in r.bit:
-                bit_json += f'''
-            {bracket_o}
-                "Bit Name": "{b.name}",
-                "Bit Type": "{b.type}",
-                "Bit Field": "{b.field}",
-                "Reset Value": "{b.reset_val}",
-                "Description": "{b.description}"
-            {bracket_c},'''
-            reg_json += bit_json[:-1] + f"\n{' ' * 10}]\n" + f"{' ' * 8}{bracket_c},\n"
+            bit_rows = [{
+                "Bit Name": str(b.name),
+                "Bit Type": str(b.type),
+                "Bit Field": str(b.field),
+                "Reset Value": str(b.reset_val),
+                "Description": str(b.description),
+            } for b in r.bit]
+            register_rows.append({
+                "Register Name": str(r.name),
+                "Offset": str(r.offset),
+                "Repeat Mode": str(getattr(r, 'repeat_mode', 'NONE')),
+                "Count or Default": str(getattr(r, 'count_default', 1)),
+                "Offset Stride": str(getattr(r, 'offset_stride', 0)),
+                "Maximum Count": str(getattr(r, 'max_count', 1)),
+                "Reset Value": str(r.reset),
+                "Description": str(r.description),
+                "Bits": bit_rows,
+            })
 
-        reg_json = reg_json[:-2]
-        self.json = f'''    {bracket_o}
-    "Project": "{self.project}",
-    "Module": "JSON debug file",
-    "Function": "Used to check the configuration after generation",
-    "Author": "{self.author}",
-    "Generator": "{getpass.getuser()}",
-    "Generator version": "{VERSION}",
-    "Page": "VLSI Technology",
-    "Table - Configuration": [
-    {bracket_o}
-        "Module Name": "{self.module_name}",
-        "Address Width": "{self.addr_wd}",
-        "Data Width": "{self.data_wd}",
-        "Protocol": "{self.protocol_name}",
-        "Asynchronous": "{self.async_option}",
-        "Strobe Mode": "{self.config.get('strobe_mode', 'HONOR')}",
-        "AXI Outstanding Mode": "{self.config.get('outstanding_mode', 'N/A')}",
-        "AXI Read Depth": "{self.config.get('rd_depth', 'N/A')}",
-        "AXI Write Depth": "{self.config.get('wr_depth', 'N/A')}",
-        "AHB Endian": "{self.config.get('ahb_endian', 'N/A')}",
-        "Register Event Sideband": "{int(self.reg_event_sideband)}"
-    {bracket_c}
-    ],
-    "Table - Register Definition": [
-{reg_json}
-    ]
-{bracket_c}'''
+        debug_data = {
+            "Project": str(self.project),
+            "Module": "JSON debug file",
+            "Function": "Used to check the configuration after generation",
+            "Author": str(self.author),
+            "Generator": getpass.getuser(),
+            "Generator version": VERSION,
+            "Page": "VLSI Technology",
+            "Table - Configuration": [{
+                "Module Name": str(self.module_name),
+                "Address Width": str(self.addr_wd),
+                "Data Width": str(self.data_wd),
+                "Protocol": str(self.protocol_name),
+                "Asynchronous": str(self.async_option),
+                "Strobe Mode": str(self.config.get('strobe_mode', 'HONOR')),
+                "AXI Outstanding Mode": str(self.config.get('outstanding_mode', 'N/A')),
+                "AXI Read Depth": str(self.config.get('rd_depth', 'N/A')),
+                "AXI Write Depth": str(self.config.get('wr_depth', 'N/A')),
+                "AHB Endian": str(self.config.get('ahb_endian', 'N/A')),
+                "Register Event Sideband": str(int(self.reg_event_sideband)),
+            }],
+            "Table - Register Definition": register_rows,
+        }
+        self.json = json.dumps(debug_data, indent=4) + "\n"
 
     def gen_rtl(self):
         header = f'''/*
@@ -1173,14 +1185,13 @@ class sfr:
         if reg_we or reg_rd:
             enables_part = f"\n  // Per-register write/read address enables.\n{reg_we}{reg_rd}"
         if self.reg_event_sideband:
-            align_msb = max(self.data_wd // 8, 2).bit_length() - 2
             terms = [f"(|w_we_{r.name})" for r in self.reg_list if r.has_we]
             wr_expr = "\n    | ".join(terms) if terms else "1'b0"
             enables_part += f"""
   // Register transaction events are qualified by the captured APB transfer.
   // Read events include aligned unmapped reads, which return zero. Unaligned reads
   // are suppressed even when the APB error response is disabled.
-  assign o_reg_rd_en   = w_rd_en & (reg_addr[{align_msb}:0] == {align_msb + 1}'b{'0' * (align_msb + 1)});
+  assign o_reg_rd_en   = w_rd_en & {self.protocol.addr_aligned_expr};
   assign o_reg_rd_addr = o_reg_rd_en ? reg_addr : '0;
 
   // Write events are asserted only for a mapped register with at least one
@@ -1411,16 +1422,25 @@ def main():
     if data_width < 8 or data_width > 32 or data_width % 8:
         print("ERROR: Data Width must be a byte multiple from 8 through 32 bits")
         sys.exit(1)
+    if protocol_key in {'APB', 'APB4'} and data_width not in {8, 16, 32}:
+        print("ERROR: APB4 Data Width must be 8, 16, or 32 bits")
+        sys.exit(1)
     if protocol_key not in {'APB', 'APB4'} and (data_width != 32 or address_width < 2):
         print("ERROR: AXI4-Lite and AHB-Lite profiles require 32-bit data and Address Width of at least 2")
         sys.exit(1)
     word_bytes = data_width // 8
+    address_align_bits = word_bytes.bit_length() - 1
+    if address_width < max(1, address_align_bits):
+        print(f"ERROR: Address Width must be at least {max(1, address_align_bits)} bits for {data_width}-bit data")
+        sys.exit(1)
     max_address = (1 << address_width) - 1
 
     def validate_identifier(name, label):
         if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", name):
             print(f"ERROR: {label} must be a valid SystemVerilog identifier; got {name!r}")
             sys.exit(1)
+
+    validate_identifier(cfg['module_name'], "Module Name")
 
     def add_address_range(name, base, stride, count):
         for index in range(count):
@@ -1496,6 +1516,7 @@ def main():
         def make_bit_list(register_name):
             result = []
             seen_fields = set()
+            used_bits = 0
             for bit_name, bit_field, bit_type, bit_reset, bit_des in rr["bits"]:
                 if bit_name is None or bit_field is None:
                     print(f"ERROR: register {register_name} contains a field without a name or bit range")
@@ -1506,12 +1527,26 @@ def main():
                     print(f"ERROR: register {register_name} has duplicate field name {field_name}")
                     sys.exit(1)
                 seen_fields.add(field_name)
+                try:
+                    field_msb, field_lsb = parse_bit_range(bit_field)
+                except ValueError as exc:
+                    print(f"ERROR: register {register_name} field {field_name}: {exc}")
+                    sys.exit(1)
+                if field_msb >= data_width:
+                    print(f"ERROR: register {register_name} field {field_name} range {bit_field!r} exceeds Data Width {data_width}")
+                    sys.exit(1)
+                field_mask = ((1 << (field_msb - field_lsb + 1)) - 1) << field_lsb
+                if used_bits & field_mask:
+                    print(f"ERROR: register {register_name} field {field_name} overlaps another field at range {bit_field}")
+                    sys.exit(1)
+                used_bits |= field_mask
+                normalized_field = f"[{field_msb}]" if field_msb == field_lsb else f"[{field_msb}:{field_lsb}]"
                 normalized_type = str(bit_type).strip().lower()
                 if normalized_type not in VALID_BIT_TYPES:
                     print(f"ERROR: unsupported bit type {bit_type!r}; supported types: {', '.join(sorted(VALID_BIT_TYPES))}")
                     sys.exit(1)
                 print("Register: ", register_name, ", Bit name: ", field_name, ", Bit Type: ", normalized_type)
-                result.append(bit(name=field_name, field=str(bit_field).strip(), type=normalized_type,
+                result.append(bit(name=field_name, field=normalized_field, type=normalized_type,
                                   reset_val=bit_reset, description=bit_des, reg_group=register_name,
                                   async_option=cfg['async_option']))
             if not result:

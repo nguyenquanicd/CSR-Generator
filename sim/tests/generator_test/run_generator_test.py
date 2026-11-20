@@ -181,7 +181,9 @@ def main():
           side_ports >= {'o_reg_rd_en', 'o_reg_rd_addr', 'o_reg_wr_en', 'o_reg_wr_addr'})
     text_side = open(sv_side, encoding='utf-8').read() if r.returncode == 0 else ''
     check('Register Event Sideband: write event ORs only registers with a software-writable field',
-          'assign o_reg_wr_en' in text_side and 'assign o_reg_rd_en   = w_rd_en & (reg_addr[1:0] == 2\'b00);' in text_side)
+          bool(re.search(r"assign o_reg_rd_en\s*=\s*w_rd_en\s*&\s*\(reg_addr\[1:0\]\s*==\s*2'b0+\);", text_side))
+          and all(f'(|w_we_{name})' in text_side for name in ('engine', 'port_0', 'port_1', 'port_2', 'monitor', 'key'))
+          and 'assign o_reg_wr_en' in text_side)
     ws7.cell(9, 2).value = 2
     w7.save(side)
     r = run([side, sheet0, '--out', os.path.join(tmp, 's2')])

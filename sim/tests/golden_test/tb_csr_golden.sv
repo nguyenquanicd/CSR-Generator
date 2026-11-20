@@ -675,8 +675,8 @@ module tb_csr_golden;
       ro_flat[7:0] = 8'h5A;
       do_rd(0);
       good_rdata = last_rdata;
-      // partial strobe
-      apb(1'b1, 16'h0000, 32'h00A0_0000, 4'hE, 3'b000, 1'b0);
+      // Partial low-byte write: PSTRB=0011 must not alter the mode in byte lane 2.
+      apb(1'b1, 16'h0000, 32'h00A0_0000, 4'h3, 3'b000, 1'b0);
       if (slv) begin
         chk(last_err === 1'b1 && last_cycles == 2, "partial strobe: error response in the first ACCESS cycle");
         chk(o_mode_flat[3:0] === m_mode[0], "partial strobe: no field change");
@@ -684,8 +684,10 @@ module tb_csr_golden;
         cov_err = cov_err + 1;
       end else begin
         chk(last_err === 1'b0, "slverr off: partial strobe gives no error");
-        m_write(0, 32'h00A0_0000, 4'hE);
-        chk(o_mode_flat[3:0] === 4'hA, "slverr off: the whole word is stored");
+        m_write(0, 32'h00A0_0000, 4'h3);
+        chk(o_mode_flat[3:0] === 4'h5, "slverr off: unstrobed mode byte is preserved");
+        do_rd(0);
+        chk(last_rdata[23:20] === 4'h5, "slverr off: partial write readback preserves unstrobed mode bits");
       end
       // misaligned address
       apb(1'b1, 16'h0001, 32'h00B0_0000, 4'hF, 3'b000, 1'b0);

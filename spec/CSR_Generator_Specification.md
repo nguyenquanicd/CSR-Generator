@@ -4,8 +4,8 @@
 |---|---|
 | Document | Specification of APB-CSR-Generator: script flow, workbook reference, user guide, normative design specification, implementation history |
 | Product | `CSR_Generation.py`, a generator of APB4, AXI4-Lite, or AHB-Lite CSR modules from an Excel register map |
-| Generator version described | 3.4 (read decode of repeated registers fixed; see the version table); Part B retains the APB4 2.4 baseline, Part C records the 3.0 bus backends, 3.1 `wo` field, and 3.2 `wo` hardware clear |
-| Document date | 2026-11-05 |
+| Generator version described | 3.6; Part B records the APB4 baseline and Part C records the AXI4-Lite/AHB-Lite backends and later field features |
+| Document date | 2026-11-21 |
 | Language | English; Vietnamese summaries and appendices where marked |
 | Replaces | `README.md` (technical content), `APB_CSR_Generator_Design_Specification.md`, `Repeated_Register_Generation_Specification.md`, `CSR_Attribute_Extension_Specification.md` |
 
@@ -104,10 +104,10 @@ Status legend used in Part A: **[implemented]** the behavior exists in the curre
 
 | Item | Value |
 |---|---|
-| Generator version | 3.4 (`VERSION` in `CSR_Generation.py`); 3.4 only changes the read-data decode of repeated registers: every element is an item of the one case, so a readable repeated register is no longer zeroed by a later group |
+| Generator version | 3.6 (`VERSION` in `CSR_Generation.py`) |
 | RTL rule baseline | VLSIT RTL Design Rule v2 (naming, port layout, header, process labels) |
 | Existing verification evidence | Generator regression and AXI4-Lite/AHB-Lite protocol simulation results are recorded in C.20.7; APB4 2.4 evidence remains in B.15.5 |
-| Version 3.4 status | Defect fixed 2026-11-07: a readable repeated register (`ro` field in a `PARAMETERIZED` group) read back 0 when a later repeated group existed, because each group had its own read `case` with `default: w_rdata_nxt = '0` in sequence. Each element is now an item of the single read `case`. Evidence: `sim/tests/generator_test` (27 of 27), `sim/tests/golden_test --quick` (pass), examples regenerated, readback of both chain registers in the MKV IP |
+| Version 3.6 status | Adds field range/overlap validation, bus-width-aware APB alignment, a time-zero guard for invalid parameterized counts, safe debug JSON encoding with a corrected `Description` key, and an APB partial-strobe regression expectation matching the byte-mask behavior. Regression scripts have not been run for this revision. |
 | Version 3.2 status (historical) | `wo` hardware-clear is generated and exercised on APB4, AXI4-Lite, and AHB-Lite; generator, golden-map, protocol, and coverage regressions pass (coverage results in `sim/results/coverage/`) |
 | Not done | CDC/RDC signoff, synthesis/area characterization, formal equivalence across versions |
 
@@ -203,7 +203,7 @@ The generated module has these functional blocks (Section B.5):
 | 1 | Parse `WORKBOOK`, `SHEET`, `--out`, `--project`, `--author` | argparse usage message, exit 2 |
 | 2 | Open the workbook with `openpyxl` and select the sheet | exception text from `openpyxl`, non-zero exit |
 | 3 | Read the configuration rows: `Module Name`, `Protocol`, `Data Width`, `Address Width`, `Asynchronous` | message naming the missing key, exit 1 |
-| 4 | Validate: `Asynchronous` is 0 or 1, `Address Width` 1 to 32, `Data Width` a byte multiple from 8 to 32, protocol `APB` | message, exit 1 |
+| 4 | Validate protocol options, `Asynchronous`, supported data widths, address width/alignment, field ranges, and identifiers | message, exit 1 |
 | 5 | Read the register table (flow F2) | message, exit 1 |
 | 6 | Expand `FIXED` and `PARAMETERIZED` registers; check identifiers, alignment, address width and overlap (flow F2) | message, exit 1 |
 | 7 | Build the module text (flow F3) | internal; a port of width below 1 is an error |
@@ -247,8 +247,8 @@ A sheet has two tables, read from top to bottom:
 |---|---|---|---|
 | `Module Name` | identifier | Name of the generated module and of the file | Must be a SystemVerilog identifier |
 | `Protocol` | `APB` | Bus protocol | Only `APB` (case-insensitive); otherwise exit 1 |
-| `Data Width` | 32 | Width of `PWDATA` and `PRDATA` | Byte multiple from 8 to 32; verified only for 32 |
-| `Address Width` | 16 | Width of `PADDR` | 1 to 32; verified for 16 |
+| `Data Width` | 32 | Width of `PWDATA` and `PRDATA` | APB4: 8, 16, or 32; AXI4-Lite/AHB-Lite: 32 |
+| `Address Width` | 16 | Width of `PADDR` | 1 to 32, and large enough for the natural alignment of the selected data width |
 | `Asynchronous` | 0 or 1 | Default of the module parameter `PARA_ASYNCHRONOUS` | Must be 0 or 1 |
 | `Write Strobe` | 4 | Informational row of the template; not read; the strobe width is 4 | None |
 
@@ -270,7 +270,7 @@ A key matches when the label contains the words above.
 | J | `OFFSET STRIDE` | register row | Byte distance between copies |
 | K | `MAX COUNT` | register row | Largest legal count (`PARAMETERIZED` only) |
 
-Rules checked by the generator: every register has at least one field; field names are unique inside a register; a field has a name and a range; the type is one of the eight supported types; addresses are aligned to the word size, fit the address width and do not overlap; generated register, group, parameter and localparam names are unique; identifiers are valid. A reset value that does not fit the field width is an error.
+Rules checked by the generator: every register has at least one field; field names are unique inside a register; each field uses `[bit]` or descending `[msb:lsb]` syntax, fits within the configured data width, and does not overlap another field; the type is one of the eight supported types; addresses are aligned to the word size, fit the address width and do not overlap; generated module/register/group/parameter/localparam identifiers are valid and unique. A reset value that does not fit the field width is an error.
 
 #### A.4.4 Naming limits
 
@@ -461,9 +461,9 @@ Two static inputs control the checks; both must be constant after reset.
 | Input | Meaning |
 |---|---|
 | `i_protect_en` | 1: a transfer with `PPROT[1]` = 1 (non-secure) is an error |
-| `i_slverr_en` | 1: error checks are active and `PSLVERR` is driven; 0: no error response, `PSTRB` is ignored and a write stores the whole word |
+| `i_slverr_en` | Static enable for APB error responses. `1` reports/rejects configured error cases; `0` suppresses `PSLVERR`. `PSTRB` always masks the bytes written. |
 
-With `i_slverr_en` = 1 a SETUP phase is an error when any of these holds: `i_protect_en` = 1 and `PPROT[1]` = 1; `PADDR[1:0]` is not 00; the transfer is a write and `PSTRB` is not 1111. An error transfer changes no field, captures no address or data, and answers in the first ACCESS cycle with `PREADY` = 1 and `PSLVERR` = 1. `PSLVERR` stays high until the next SETUP phase. A read or write of an aligned address that is not a register completes without error (read 0, write ignored).
+With `i_slverr_en` = 1 a SETUP phase is an error when any of these holds: `i_protect_en` = 1 and `PPROT[1]` = 1; the address is not naturally aligned to the configured APB data width; or the transfer is a write and `PSTRB` is not all ones. An error transfer changes no field, captures no address or data, and answers in the first ACCESS cycle with `PREADY` = 1 and `PSLVERR` = 1. `PSLVERR` stays high until the next SETUP phase. With `i_slverr_en` = 0, the transfer does not raise `PSLVERR`; byte lanes selected by `PSTRB` are still the only bytes updated. For a 32-bit APB register reset to `0xFFFFFFFF`, writing `0x12345678` with `PSTRB=4'b0011` produces `0xFFFF5678`. A read or write of an aligned address that is not a register completes without error (read 0, write ignored).
 
 **Error detection.**
 
@@ -652,7 +652,9 @@ python sim/tests/generator_test/run_generator_test.py      # tests of the tool i
 | `the configuration table ... has no value for <key>` | A required row is missing | Add the row (`Module Name`, `Protocol`, `Data Width`, `Address Width`, `Asynchronous`) |
 | `Asynchronous must be 0 or 1` | Wrong value | Use 0 or 1 |
 | `Address Width must be between 1 and 32 bits` | Wrong value | Correct it |
-| `Data Width must be a byte multiple from 8 through 32 bits` | Wrong value | Use 8, 16, 24 or 32 |
+| `APB4 Data Width must be 8, 16, or 32 bits` | Unsupported APB data width | Use 8, 16, or 32 |
+| `Address Width must be at least ...` | Address bus cannot represent the natural alignment bits | Increase Address Width for the selected data width |
+| `field ... range ... exceeds Data Width ...`, `overlaps another field`, or `bit range must ...` | Invalid field declaration | Use a valid, non-overlapping range within the data word |
 | `Protocol must be APB4, AXI4-Lite, or AHB-Lite` | `Protocol` value is unsupported | Select one of the supported protocol values in C.20.2 |
 | `<label> must be a valid SystemVerilog identifier` | Register or module name with illegal characters | Rename |
 | `unsupported bit type '<x>'; supported types: ...` | `BIT TYPE` outside the supported set | Use one of `rw ro rwi w1c w0c w2c r2c wo` |
@@ -676,7 +678,7 @@ Symptoms without a message:
 
 | Symptom | Likely cause |
 |---|---|
-| `PSLVERR` on a byte write | `i_slverr_en` = 1 and `PSTRB` is not 1111; write a whole word or set `i_slverr_en` = 0 (the whole word is then stored) |
+| `PSLVERR` on a byte write | `i_slverr_en` = 1 and `PSTRB` is not all ones; if set to 0, the write proceeds and only strobed byte lanes update |
 | `PSLVERR` on every access | `i_protect_en` = 1 and the master sends `PPROT[1]` = 1, or the address is not word aligned |
 | A hardware load does nothing | `i_hw_we_*` must be 1 in a register-clock cycle; for `rwi`, a software write in the same cycle wins |
 | A flag clears by itself | A `w0c` field clears on any write that does not carry a 1 in its bit; a `w2c` field clears on any write to its register |
@@ -685,7 +687,7 @@ Symptoms without a message:
 
 #### A.6.10 Frequently asked questions
 
-**Can I use a data width other than 32?** The generator accepts byte multiples from 8 to 32, but the testbench and the verification evidence cover only 32. Verify any other width yourself.
+**Can I use a data width other than 32?** APB4 accepts 8-, 16-, and 32-bit data; AXI4-Lite/AHB-Lite require 32 bits. APB address alignment checks follow the configured data width. The checked-in examples use 32-bit data.
 
 **How do I add a register?** Add a register row and its field rows in the sheet at an unused, aligned offset and run the generator again.
 
@@ -703,7 +705,7 @@ Symptoms without a message:
 - One transfer at a time; no pipelining.
 - APB4 uses `i_slverr_en`: when enabled, a partial write returns `PSLVERR`; when disabled, `PSTRB` selects the byte lanes that update. AXI4-Lite/AHB-Lite use the `Strobe Mode` configuration in C.20.
 - Only `PPROT[1]` is checked, and only with `i_protect_en` = 1 and `i_slverr_en` = 1.
-- Field overlaps and name lengths are not checked by the generator.
+- Field ranges and overlaps are checked; RTL port-name length limits remain the responsibility of the selected RTL rule checker.
 - No CDC tool or synthesis result exists for the module (Section B.15.5).
 
 APB4 compliance:
@@ -714,13 +716,13 @@ APB4 compliance:
 | `PREADY` wait states | Fixed one wait state in CFG-SYNC; bounded by the handshake in CFG-ASYNC; not driven by register-specific latency |
 | `PSLVERR` error response | Yes (protection, alignment, strobe) |
 | `PPROT` | Partial: only `PPROT[1]` (secure/non-secure), gated by `i_protect_en` |
-| `PSTRB` | Checked, not honored: a partial write is rejected with `PSLVERR` or stored as a whole word |
+| `PSTRB` | Always honored as a byte mask; with `i_slverr_en=1`, partial writes are rejected with `PSLVERR`; with `i_slverr_en=0`, selected lanes update without an error response |
 
 ## Part B. Normative design specification of generator 2.4
 
 > **Purpose:** Normative design contract for architecture, RTL, verification, DFT, and physical integration of this IP.
 >
-> This specification describes generator version 2.4. Normative behavior is derived from `CSR_Generation.py`; the verification evidence of the current version is in Section B.15.5.
+> This section preserves the historical APB4 2.4 baseline. For behavior added or corrected in generator 3.6, including APB `PSTRB` handling and supported APB widths, Section C.20 is the current contract and takes precedence.
 >
 > Version 2.2 adds `w0c`, `w2c`, and `r2c` fields and a single generated RTL module with the
 > elaboration parameter `PARA_ASYNCHRONOUS`. Version 2.3 adds `FIXED` and `PARAMETERIZED`
@@ -794,7 +796,7 @@ This document specifies two things: the tool (Section B.10.2, tool operations TO
 
 | Standard | Revision / profile | Role implemented | Options | Deviations |
 |---|---|---|---|---|
-| AMBA APB | IHI 0024D, APB4 profile | Completer | PSTRB, PPROT, PSLVERR present; 32-bit data, 16-bit address; PWAKEUP, PAUSER, PWUSER, PRUSER, PBUSER, and check signals absent | DEV-001: after an error response, PSLVERR stays HIGH until the next SETUP phase, although REF-001 section 3.4 recommends LOW when PSEL, PENABLE, or PREADY is LOW (a recommendation, not a requirement). DEV-002: sparse writes are rejected; REF-001 section 3.2.1 allows a Completer that supports a limited set of access types if the limit is documented, which Section B.6.3 does. DEV-003: with `i_slverr_en` = 0, PSLVERR keeps its last value (ERR-004 of Section B.12). |
+| AMBA APB | IHI 0024D, APB4 profile | Completer | PSTRB, PPROT, PSLVERR present; 32-bit data, 16-bit address; PWAKEUP, PAUSER, PWUSER, PRUSER, PBUSER, and check signals absent | DEV-001: after an error response, PSLVERR stays HIGH until the next SETUP phase, although REF-001 section 3.4 recommends LOW when PSEL, PENABLE, or PREADY is LOW (a recommendation, not a requirement). DEV-002: with `i_slverr_en` = 1, partial writes are rejected; when it is 0, the selected PSTRB lanes are written. REF-001 section 3.2.1 permits a documented access-type restriction. DEV-003: with `i_slverr_en` = 0, PSLVERR keeps its last value (ERR-004 of Section B.12). |
 
 ### B.3 Requirements and traceability
 
@@ -805,7 +807,7 @@ Areas: GEN (the tool), IF (interfaces), FUNC (function), CLK, RESET, ERR, PARAM,
 | REQ-GEN-001 | The tool shall be run as `CSR_Generation.py WORKBOOK SHEET` with the optional switches `--out DIR` (default: the current folder), `--project NAME`, and `--author "NAME (user)"`, and shall exit with status 1 when the workbook or the sheet cannot be opened (the Python error is printed) or when a required configuration value is missing (the message names the value). | REF-002 CSR_Generation.py main | All configurations | Test TEST-001 |
 | REQ-GEN-002 | The tool shall read the configuration table below `Table - Configuration` by matching first-column labels `Module Name`, `Protocol`, `Data Width`, `Address Width`, and `Asynchronous`, then start the register table at the first row whose first column contains `REGISTER`. `Asynchronous` shall be 0 or 1 and sets the default of generated parameter `PARA_ASYNCHRONOUS`. | REF-002 read_workbook | All configurations | Generator input check |
 | REQ-GEN-003 | The tool shall treat a row with text in column A as a new register (name in A, offset in B, reset in F, description in G, and optional repeat metadata in H–K) and every other row as a field of the last register (bit name in C, bit range in D, type in E, reset in F, description in G), and shall skip a row whose bit name and bit range are both empty. | REF-002 read_workbook | All configurations | Generator input check |
-| REQ-GEN-004 | The tool shall accept only the protocol `APB` and shall exit with status 1 and a message for any other protocol. | REF-002 sfr.__init__ | All configurations | Test TEST-001 |
+| REQ-GEN-004 | The tool shall accept APB/APB4, AXI4-Lite/AXI/AXIL, and AHB-Lite/AHB and shall exit with status 1 and a message for unsupported protocol values. | REF-002 main and sfr.__init__ | All configurations | Generator input check |
 | REQ-GEN-005 | The tool shall write `RTL/{Module Name}.sv`, `RTL/filelist.f` (paths relative to the folder of the file), and `Debug/debug.json` under the folder of `--out`, and shall create the folders when they are absent. | REF-002 main | All configurations | Test TEST-001 |
 | REQ-GEN-006 | The tool shall write `RTL/models/m_csr_sync.sv` only if it does not exist and shall always include it in `RTL/filelist.f`, because the generated parameter can be overridden after generation. | REF-002 main | All configurations | Test TEST-001 |
 | REQ-GEN-007 | The tool shall start every generated `.sv` file with the six header fields Project, Author, AI Flow, AI Flow Page, Date, and Description, where Project and Author come from `--project` and `--author` (defaults: `APB-CSR-Generator` and the login name followed by ` (user)`) and the Description states that the RTL follows the VLSIT RTL Design Rule v2. | REF-003 FIL-01 | All configurations | Rule check TEST-009 |
@@ -831,10 +833,10 @@ Areas: GEN (the tool), IF (interfaces), FUNC (function), CLK, RESET, ERR, PARAM,
 | REQ-FUNC-009 | In CFG-ASYNC a transfer without error shall complete when the acknowledge of the register clock domain has been synchronized back, with PREADY = 1 for one cycle; the register update of a write shall happen before PREADY; PRDATA shall be valid in the cycle in which PREADY is 1; the number of wait states shall not be promised. | REF-002 | CFG-ASYNC | Simulation TEST-007 |
 | REQ-FUNC-010 | PRDATA shall hold the read data of the last read without error and shall not change in a cycle in which PREADY = 1 for a write or for an error. | REF-001 §3.4; REF-002 | All configurations | Simulation TEST-004 |
 | REQ-FUNC-011 | A successful read of a repeated-register group shall return the addressed index. An `r2c` field shall clear only in that addressed index; unrelated indices shall retain their values. | REF-002; REF-006 §4 | `FIXED`, `PARAMETERIZED` | Directed read/clear checks |
-| REQ-ERR-001 | When `i_slverr_en` = 1 the module shall give an error response to a SETUP phase in which any of these holds: `i_protect_en` = 1 and PPROT[1] = 1; PADDR[1:0] is not 00; the transfer is a write and PSTRB is not 4'b1111. | REF-002 apb_access; REF-001 §3.2.1, §3.4, §3.5 | All configurations | Simulation TEST-008 |
+| REQ-ERR-001 | When `i_slverr_en` = 1 the module shall give an error response to a SETUP phase in which any of these holds: `i_protect_en` = 1 and PPROT[1] = 1; the address is not naturally aligned to the configured APB data width; the transfer is a write and PSTRB is not all ones. | REF-002 apb_access; REF-001 §3.2.1, §3.4, §3.5 | All configurations | Simulation TEST-008 |
 | REQ-ERR-002 | A transfer with an error response shall change no field, shall not capture address or data, and shall not update PRDATA. | REF-002 apb_access | All configurations | Simulation TEST-008 |
 | REQ-ERR-003 | An error response shall have PREADY = 1 and PSLVERR = 1 in the first ACCESS cycle (no wait state), and PSLVERR shall stay 1 until the next SETUP phase while `i_slverr_en` = 1. | REF-002; DEV-001 | All configurations | Simulation TEST-008 |
-| REQ-ERR-004 | When `i_slverr_en` = 0 the module shall generate no error response: PSTRB shall be ignored and a write shall store the whole word, and PSLVERR shall keep the value that it had before; the integrator shall therefore hold `i_slverr_en` constant after reset. | REF-002; DEV-003 | All configurations | Simulation TEST-008 |
+| REQ-ERR-004 | When `i_slverr_en` = 0 the module shall suppress APB error responses while still applying PSTRB as the byte-write mask. A partial write shall update only strobed lanes; for reset `0xFFFFFFFF`, data `0x12345678`, and `PSTRB=4'b0011`, readback shall be `0xFFFF5678`. PSLVERR shall keep its prior value; the integrator shall hold `i_slverr_en` constant after reset. | REF-002; DEV-003 | All configurations | Directed sparse-write check |
 | REQ-ERR-005 | When `i_protect_en` = 0 the module shall not check PPROT; PPROT bits other than bit 1 shall never cause an error. | REF-002 apb_access; REF-001 §3.5 | All configurations | Simulation TEST-008 |
 | REQ-RESET-001 | An asserted `i_rst_n_apb` (and `i_rst_n_reg` in CFG-ASYNC) shall asynchronously clear every flip-flop of its domain: fields to their workbook reset values, and the address and data holding flip-flops, PREADY, PSLVERR, and PRDATA to 0. | REF-002; REF-003 RST-01 | All configurations | Simulation TEST-003 |
 | REQ-RESET-002 | A reset asserted in the middle of a transfer shall abandon the transfer: PREADY and PSLVERR are 0 while the reset is asserted and no write takes effect after the reset. | REF-002 | All configurations | Simulation TEST-003 |
@@ -923,7 +925,7 @@ The ports of the APB interface, the clocks, the resets, and the access check con
 | i_apb_pwrite | Input | 1 | Direction: 1 write, 0 read | CLK-APB | data (valid while i_apb_psel is 1) | Not significant | Sampled in the SETUP phase | All |
 | i_apb_paddr | Input | 16 | Byte address of the register; bits [1:0] shall be 00 | CLK-APB | data (valid while i_apb_psel is 1) | Not significant | Sampled in the SETUP phase | All |
 | i_apb_pwdata | Input | 32 | Write data | CLK-APB | data (valid while i_apb_psel and i_apb_pwrite are 1) | Not significant | Sampled in the SETUP phase | All |
-| i_apb_pstrb | Input | 4 | Byte strobes of a write; all four shall be 1 | CLK-APB | data (valid while i_apb_psel and i_apb_pwrite are 1) | Not significant | Sampled in the SETUP phase | All |
+| i_apb_pstrb | Input | 4 | Byte strobes of a write; all four select a full-word write. With `i_slverr_en=0`, any lane mask is applied to the write data; with it set to 1, partial writes are rejected. | CLK-APB | data (valid while i_apb_psel and i_apb_pwrite are 1) | Not significant | Sampled in the SETUP phase | All |
 | i_apb_pprot | Input | 3 | Protection type; only bit 1 (non-secure when 1) is used | CLK-APB | data (valid while i_apb_psel is 1) | Not significant | Sampled in the SETUP phase | All |
 | o_apb_pready | Output | 1 | Transfer ready; ends the wait states | CLK-APB | level (high for one cycle per transfer) | 0 | Flip-flop output, changes after the rising edge | All |
 | o_apb_pslverr | Output | 1 | Transfer error response | CLK-APB | level (valid while psel, penable, and pready are 1; held high until the next SETUP after an error) | 0 | Flip-flop output | All |
@@ -948,7 +950,7 @@ The module is an APB4 Completer of REF-001 (revision IHI 0024D), without PWAKEUP
 |---|---|---|---|---|
 | Write of a full word to a register offset | PSTRB = 4'b1111, PADDR[1:0] = 00 | Not applicable | Fields load per their type; one wait state in CFG-SYNC; completes with PSLVERR = 0 | REQ-FUNC-002, REQ-FUNC-008 |
 | Read of a register offset | PWRITE = 0, PADDR[1:0] = 00 | Not applicable | Returns the register value; one wait state in CFG-SYNC | REQ-FUNC-004, REQ-FUNC-008 |
-| Write with a partial strobe (REF-001 §3.2) | Not supported (sparse writes) | PSTRB not 4'b1111 on a write | With `i_slverr_en` = 1: error response, no change. With 0: whole word stored | REQ-ERR-001, REQ-ERR-004 |
+| Write with a partial strobe (REF-001 §3.2) | Supported according to error-enable policy | PSTRB not all ones on a write | With `i_slverr_en` = 1: error response, no change. With 0: only strobed lanes update | REQ-ERR-001, REQ-ERR-004 |
 | Read with PSTRB not 0 (REF-001 §3.2: Requester drives PSTRB LOW on a read) | PSTRB = 0 | Requester error | PSTRB is not checked on a read | REQ-ERR-001 |
 | Unaligned PADDR (REF-001 §2.1.1: result UNPREDICTABLE) | PADDR[1:0] = 00 | PADDR[1:0] not 00 | With `i_slverr_en` = 1: error response. With 0: matches no register (read 0, write ignored) | REQ-ERR-001, REQ-ERR-004 |
 | Aligned address that is not a register | Any 4-byte aligned address | Not applicable | Read 0, write ignored, PSLVERR = 0 | REQ-FUNC-005 |
@@ -1017,7 +1019,7 @@ The generated module exposes `PARA_ASYNCHRONOUS` as an elaboration-time paramete
 | CFG-SYNC | None | One clock; APB side only plus field ports | One module (the generated module) | verilator and slang lint, rule check, simulation; reference sheet `CSR` |
 | CFG-ASYNC | None | Two clocks; handshake bridge | The generated module with four instances of `m_csr_sync` (`u_rd_ack_sync`, `u_wr_ack_sync`, `u_rd_req_sync`, `u_wr_req_sync`) | verilator and slang lint, rule check, simulation with several clock ratios, CDC analysis; reference sheet `ASYNC_CSR` |
 
-The generator rejects unsupported field types, invalid repeat metadata, invalid identifiers, unaligned or out-of-range addresses, and overlapping register addresses. It does not check overlapping or out-of-range bit fields, reserved-field policy, or the semantic suitability of reset and field values. The VLSIT skill scripts `vlsit_csr_tool.py validate` and `vlsit_csr_generate.py` remain responsible for broader workbook validation (DEP-002).
+The generator rejects unsupported field types, malformed, ascending, overlapping, or out-of-range bit fields, invalid repeat metadata, invalid identifiers, unaligned or out-of-range addresses, and overlapping register addresses. Reserved-field policy and the semantic suitability of reset and field values remain outside generator validation. The VLSIT skill scripts `vlsit_csr_tool.py validate` and `vlsit_csr_generate.py` provide broader workbook validation (DEP-002).
 
 ### B.9 Data representation and arithmetic
 
@@ -1032,7 +1034,7 @@ Bit 0 is the least significant bit. A register is a 32-bit word at a 4-byte alig
 | Field of type ro | 1 to 32 | Binary value of the input at the read enable | None | None |
 | Field named `reserved` | 1 to 31 | Reads 0 | None | A write is ignored |
 | Reset value of a field | Field width | Hexadecimal text `0x...` of the workbook | The reset text is written as a sized hexadecimal literal of the field width | A value that does not fit gives a lint width warning (checked by the VLSIT scripts) |
-| PSTRB | 4 | 4'b1111 for every write | Bit n qualifies PWDATA[8n+7:8n] | Any other value on a write is a sparse write: rejected (REQ-ERR-001) |
+| PSTRB | 4 | `4'b1111` selects all bytes; any mask is applied lane by lane when `i_slverr_en=0` | Bit n qualifies PWDATA[8n+7:8n] | With `i_slverr_en=1`, a partial write is rejected; with `i_slverr_en=0`, only selected lanes update (REQ-ERR-001/004) |
 | PPROT | 3 | Bit 1 = 1 non-secure; bits 0 and 2 unused | None | None |
 
 ### B.10 Detailed functional behavior
@@ -1156,8 +1158,8 @@ A signal from a clock domain other than the register clock shall be synchronized
 | Case | Behavior |
 |---|---|
 | Normal read or write | CFG-SYNC: PREADY after one wait state. CFG-ASYNC: wait states depend on the clock ratio; software waits for PREADY |
-| Write with PSTRB not all ones | PSLVERR and no change when `i_slverr_en` = 1; whole word stored when 0 |
-| Address not word aligned | PSLVERR when `i_slverr_en` = 1; with 0 it matches no register (read 0, write ignored) |
+| Write with PSTRB not all ones | PSLVERR and no change when `i_slverr_en` = 1; only selected bytes update when 0 |
+| Address not naturally aligned to the configured data width | PSLVERR when `i_slverr_en` = 1; with 0 it matches no register (read 0, write ignored) |
 | Aligned address that is not a register | OKAY; read returns 0; write is ignored |
 | Non-secure access (PPROT[1] = 1) | PSLVERR when `i_protect_en` = 1 and `i_slverr_en` = 1 |
 | Reserved bits | Read as 0; write ignored |
@@ -1170,7 +1172,7 @@ A signal from a clock domain other than the register clock shall be synchronized
 | ERR-001 | `i_slverr_en` = 1, `i_protect_en` = 1, and PPROT[1] = 1 in a SETUP phase | PREADY = 1 and PSLVERR = 1 in the first ACCESS cycle; no change | None | PSLVERR clears at the next SETUP phase of a transfer without error | PSLVERR = 0 |
 | ERR-002 | `i_slverr_en` = 1 and PADDR[1:0] not 00 in a SETUP phase | As ERR-001 | None | As ERR-001 | As ERR-001 |
 | ERR-003 | `i_slverr_en` = 1, a write, and PSTRB not 4'b1111 in a SETUP phase | As ERR-001; the write is rejected | None | As ERR-001 | As ERR-001 |
-| ERR-004 | `i_slverr_en` = 0 | No error is ever generated; PSTRB ignored; a misaligned address matches no register; PSLVERR keeps its last value (DEV-003) | None | Hold `i_slverr_en` constant after reset; if it changes, one transfer without error with `i_slverr_en` = 1 clears a stale PSLVERR | PSLVERR = 0 |
+| ERR-004 | `i_slverr_en` = 0 | No error is reported; PSTRB remains the write mask; a misaligned address matches no register; PSLVERR keeps its last value (DEV-003) | None | Hold `i_slverr_en` constant after reset; if it changes, one transfer without error with `i_slverr_en` = 1 clears a stale PSLVERR | PSLVERR = 0 |
 | ERR-005 | Aligned address that is not a register | No error; read 0; write ignored | None | None | Not applicable |
 | ERR-006 | Requester violates the protocol (a new SETUP phase before PREADY, a change of address or data during the transfer) | Not detected; the result is unspecified | None | Reset | Not applicable |
 
@@ -1679,7 +1681,7 @@ Limits of this survey: SRC-1 is read through PeakRDL documentation, not the Acce
 | HW interface | `ro`: `i_<reg>_<field>`; `rw`: `o_`; `rwi`/`w1c`/`w0c`/`w2c`/`r2c`: `o_` plus `i_hw_we_` and `i_hw_wdata_` (load the whole field) |
 | Priority | `rwi`: SW over HW; `w1c`/`w0c`/`w2c`/`r2c`: HW over SW (fixed per type) |
 | Errors | Static, global: `i_protect_en` with PPROT[1], word alignment, full PSTRB; response in the first ACCESS cycle |
-| Strobes | Partial PSTRB is rejected (`i_slverr_en` = 1) or ignored (0) |
+| Strobes | Partial PSTRB is rejected with an error when `i_slverr_en` = 1; when 0, only selected byte lanes update |
 | Replication | `FIXED`, `PARAMETERIZED` |
 | Clocking | `PARA_ASYNCHRONOUS` |
 | Outputs | RTL, `filelist.f`, `debug.json` |
@@ -1780,7 +1782,7 @@ reference  := register "." field | register
 
 | Key | Values | Default | Meaning |
 |---|---|---|---|
-| `Strobe Mode` | `REJECT`, `HONOR`, `IGNORE` | `REJECT` | Write strobe handling (Section C.7.3) |
+| `Strobe Mode` | `REJECT`, `HONOR` (`IGNORE` is a historical proposal and is not generated) | `REJECT` | Write strobe handling (Section C.7.3) |
 | `Default Access Level` | `ANY`, `PRIV`, `SECURE`, `PRIV_SECURE` | `ANY` | Access level of registers without an attribute (Section C.7.1) |
 | `Level Violation` | `ERROR`, `RAZWI` | `ERROR` | Response to an access-level violation |
 | `Ro Write Error` | `0`, `1` | `0` | A write to a read-only register or field gives an error response |
@@ -1996,7 +1998,7 @@ A write blocked at stages 5 to 8 does not change the field, does not pulse `swmo
 |---|---|
 | `REJECT` | 2.4 behavior: a write with PSTRB not 1111 gives PSLVERR when `i_slverr_en` = 1 |
 | `HONOR` | Each byte lane is written only if its PSTRB bit is 1; no error |
-| `IGNORE` | PSTRB is ignored and the whole word is stored (the 2.4 behavior when `i_slverr_en` = 0) |
+| `IGNORE` | Historical proposal only; the current generator does not implement this policy. `PSTRB` remains the write mask when `i_slverr_en` = 0. |
 
 `HONOR` semantics per type (lane L covers bits 8L+7:8L; a field covers every lane it overlaps):
 
@@ -2743,8 +2745,8 @@ The AXI4-Lite profile follows Arm IHI 0022H.c Part B1; the AHB-Lite profile foll
 | Key | Allowed value | Default / applicability |
 |---|---|---|
 | `Protocol` | `APB`, `APB4`, `AXI4-Lite`/`AXI`/`AXIL`, `AHB-Lite`/`AHB` | Required; one bus per sheet |
-| `Data Width` | AXI4-Lite/AHB-Lite: `32`; APB4: 8–32, byte multiple | Required |
-| `Address Width` | AXI4-Lite: 2–32; AHB-Lite: 2–32; APB4: 1–32 | Required; byte address width |
+| `Data Width` | AXI4-Lite/AHB-Lite: `32`; APB4: `8`, `16`, or `32` | Required |
+| `Address Width` | AXI4-Lite: 2–32; AHB-Lite: 2–32; APB4: 1–32 and sufficient for the data-width alignment | Required; byte address width |
 | `Asynchronous` | `0` or `1` | Required; selects same-clock or separate register-clock operation |
 | `Strobe Mode` | `HONOR` or `REJECT` | Default `HONOR`; applies to AXI4-Lite/AHB-Lite writes |
 | `AXI Outstanding Mode` | `SINGLE`, `READ_WRITE`, `QUEUED` | Default `SINGLE`; AXI4-Lite only |
@@ -2753,7 +2755,9 @@ The AXI4-Lite profile follows Arm IHI 0022H.c Part B1; the AHB-Lite profile foll
 | `AHB Endian` | `LITTLE`, `BE8`, `BE32` | Default `LITTLE`; AHB-Lite only |
 | `Register Event Sideband` | `0` or `1` | Default `0`; APB4 only. `1` adds `o_reg_rd_en`, `o_reg_rd_addr`, `o_reg_wr_en`, `o_reg_wr_addr`: the read event is an aligned APB read, the write event is a write to a mapped register with at least one software-writable field (`rw`, `wo`, `rwi`, `w1c`, `w0c`, `w2c`); each address output is the captured address during its event and zero otherwise |
 
-The workbook records the selected settings for reproducible generation. AXI outstanding mode/depth, `PARA_ASYNCHRONOUS`, write-strobe mode and AHB endian are top-level RTL parameters and can be overridden at elaboration. AXI/AHB require 32-bit data even though APB4 retains the earlier width range.
+The workbook records the selected settings for reproducible generation. AXI outstanding mode/depth, `PARA_ASYNCHRONOUS`, write-strobe mode and AHB endian are top-level RTL parameters and can be overridden at elaboration. AXI/AHB require 32-bit data; APB4 supports 8-, 16-, and 32-bit data, with address alignment derived from that width.
+
+For APB4, `i_slverr_en` controls whether configured access errors are reported through `PSLVERR`; it does not disable the write-byte mask. `PSTRB[n]` always controls `PWDATA[8*n+7:8*n]`. With `i_slverr_en=1`, a partial write is rejected with `PSLVERR` and no register update. With `i_slverr_en=0`, it completes without an error response and only the selected byte lanes update. Example: reset `i2s_tx_mask=0xFFFFFFFF`, write `0x12345678` with `PSTRB=4'b0011` and `i_slverr_en=0` → read `0xFFFF5678`.
 
 AXI example:
 
@@ -2841,6 +2845,7 @@ The emitted CSR module is the sole protocol-facing RTL module. `RTL/filelist.f` 
 | Shared engine arbitration | Round-robin; reset selects read; simultaneous same-register accesses follow issue order |
 | Partial writes | `HONOR` or `REJECT` |
 | AHB endian | `LITTLE`, `BE8`, or `BE32`; workbook default is `LITTLE` |
+| APB byte strobes | Always honored; `i_slverr_en` controls error response/rejection only |
 | Async clocks | `Asynchronous=1` selects separate bus/register clocks and dual-clock FIFO CDC; `0` selects the bus clock with single-clock FIFOs |
 
 #### C.20.7 Requirements and verification status
@@ -2853,6 +2858,12 @@ The emitted CSR module is the sole protocol-facing RTL module. `RTL/filelist.f` 
 | REQ-BUS-004 | Honor/reject AXI strobes and return AXI error responses | `tb_axil.sv` |
 | REQ-BUS-005 | Capture AHB address/control, align CSR decode, map subword lanes, return two-cycle ERROR | `tb_ahblite.sv` |
 | REQ-BUS-006 | Support AHB LITTLE/BE8/BE32 mapping and asynchronous FIFO configuration | `tb_ahblite.sv`; `AHB_LITE_LE`, `AHB_LITE_BE8`, `AHB_LITE_BE32`, `AHB_LITE_ASYNC` |
+| REQ-BUS-007 | When `i_slverr_en=0`, preserve APB `PSTRB` masking; a 32-bit write of `0x12345678` with `PSTRB=0011` to reset value `0xFFFFFFFF` shall read back `0xFFFF5678` | APB generated field mask; sparse-write scenario in A.5.7 |
+| REQ-BUS-008 | Accept APB data widths 8, 16, and 32 only; check natural address alignment according to the selected width | Generator configuration validation and APB alignment expression |
+| REQ-BUS-009 | Reject malformed, out-of-range, or overlapping register field ranges before RTL emission | Generator workbook validation |
+| REQ-BUS-010 | Keep generated debug JSON valid for quotes, backslashes, and newlines in workbook text; reject `PARAMETERIZED` count values outside 1..MAX COUNT | JSON serialization and parameter range guard |
+
+**Version 3.6 verification status:** these changes were reviewed statically; the regression scripts were not run for this revision.
 
 Run the regressions with:
 
@@ -2960,6 +2971,9 @@ For a functional zeroize operation, connect the zeroize control to every `i_hw_c
 | 3.1 | 2026-11-05 | Added `wo` field generation: software writes update resettable storage and the hardware output, while bus reads return zero for those bits. C.21 specifies the behavior; the v3.2 regression suite exercises it. |
 | 3.2 | 2026-11-05 | Added active-high `i_hw_clear_<register>_<field>` inputs for `wo`; synchronous clear sets the stored field to zero and takes priority over software writes. C.22 defines timing, parameterized-bank behavior, and the register-clock-domain requirement. Generator, simulation, protocol, and >70% per-example coverage regressions pass; see `sim/results/coverage/`. CDC/RDC signoff remains open for integration. |
 | 3.3 | 2026-11-05 | Changed the combinational write mask from `reg_wmask` to the VLSIT `w_wmask` prefix and shortened `wo` clear ports from `i_hw_clear_` to `i_hw_clr_` so generated names fit the 30-character RTL limit. Transaction behavior is unchanged. Generator regression passed 23/23 checks; APB4 golden simulation passed nine clock configurations plus the event-sideband case; AXI4-Lite/AHB-Lite protocol regression passed eight lint configurations and eight simulations. APB4, AXI4-Lite and AHB-Lite each passed the strict >70% line/condition/toggle coverage gate. |
+| 3.4 | 2026-11-07 | Fixed repeated-register read decode so all banks share one read case and a later bank's default cannot clear an earlier bank's read data. |
+| 3.5 | 2026-11-08 | Added opt-in `--vlsit-style` formatting and range-based read decoders for parameterized banks. |
+| 3.6 | 2026-11-21 | Validate field syntax, bounds and overlaps; validate module identifiers; support APB 8/16/32-bit alignment; retain `PSTRB` masking when `i_slverr_en=0`; report invalid parameterized counts; serialize debug JSON safely. Regression scripts not run for this revision. |
 
 ### D.2 Figure index
 

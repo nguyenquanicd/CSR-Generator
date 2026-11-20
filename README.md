@@ -2,11 +2,11 @@
 
 ## English
 
-`CSR_Generation.py` v3.4 reads a register map from an Excel workbook and generates one synthesizable SystemVerilog CSR module. Each workbook sheet selects one bus interface.
+`CSR_Generation.py` v3.6 reads a register map from an Excel workbook and generates one synthesizable SystemVerilog CSR module. Each workbook sheet selects one bus interface.
 
 | Bus | Supported profile | Key options |
 |---|---|---|
-| APB4 | Existing profile | `i_slverr_en=1` rejects partial strobes; `i_slverr_en=0` honors byte lanes. Optional APB4-only register-event sideband; synchronous or asynchronous CSR clocking |
+| APB4 | 8-, 16-, or 32-bit data | `i_slverr_en=1` reports and rejects partial writes; `i_slverr_en=0` suppresses `PSLVERR`. `PSTRB` always selects the bytes written. Optional register-event sideband; synchronous or asynchronous CSR clocking |
 | AXI4-Lite | 32-bit data, byte-addressed | `SINGLE`, `READ_WRITE`, or `QUEUED`; independent read/write depths from 1 to 8; `HONOR` or `REJECT` `WSTRB` |
 | AHB-Lite | 32-bit data, byte-addressed | `HONOR` or `REJECT` subword writes; `LITTLE`, `BE8`, or `BE32` lane mapping |
 
@@ -15,6 +15,8 @@ AXI4-Lite read and write requests share one CSR engine. Arbitration is round-rob
 For AXI4-Lite/AHB-Lite, `Asynchronous=0` uses single-clock request/response FIFOs and elaborates no CDC synchronizers. `Asynchronous=1` uses the workbook's register clock and dual-clock FIFOs. Both builds come from one RTL source using `PARA_ASYNCHRONOUS`. APB4 retains its existing clock architecture.
 
 For APB4, the optional `Register Event Sideband` setting defaults to `0` when omitted. Set it to `1` to add one-cycle `o_reg_rd_en`/`o_reg_wr_en` pulses and `o_reg_rd_addr`/`o_reg_wr_addr` outputs. Read events cover aligned reads, including unmapped addresses. Write events cover accepted writes to mapped registers with software-writable fields. Address outputs are zero when their event is inactive. The APB4 example enables this option.
+
+For example, with a 32-bit APB register reset to `0xFFFFFFFF`, writing `0x12345678` with `PSTRB=4'b0011` and `i_slverr_en=0` updates only the low two bytes; readback is `0xFFFF5678`. Disabling `i_slverr_en` disables the error response; it does not disable byte strobes.
 
 ### Write-only fields
 
@@ -50,11 +52,11 @@ The root [`CSR_GOLDEN_FORMAT.xlsx`](CSR_GOLDEN_FORMAT.xlsx) contains the complet
 
 ## Tiếng Việt
 
-`CSR_Generation.py` phiên bản 3.4 đọc bản đồ thanh ghi từ workbook Excel và sinh một module CSR SystemVerilog có thể tổng hợp. Mỗi sheet chọn một giao diện bus.
+`CSR_Generation.py` phiên bản 3.6 đọc bản đồ thanh ghi từ workbook Excel và sinh một module CSR SystemVerilog có thể tổng hợp. Mỗi sheet chọn một giao diện bus.
 
 | Bus | Profile hỗ trợ | Tùy chọn chính |
 |---|---|---|
-| APB4 | Profile hiện có | `i_slverr_en=1` từ chối strobe không đầy đủ; `i_slverr_en=0` ghi theo byte lane. Có thể bật register-event sideband; CSR đồng bộ hoặc bất đồng bộ |
+| APB4 | Data 8, 16 hoặc 32 bit | `i_slverr_en=1` báo lỗi và từ chối ghi thiếu strobe; `i_slverr_en=0` tắt `PSLVERR`. `PSTRB` luôn chọn byte được ghi. Có thể bật register-event sideband; CSR đồng bộ hoặc bất đồng bộ |
 | AXI4-Lite | Data 32 bit, địa chỉ theo byte | `SINGLE`, `READ_WRITE` hoặc `QUEUED`; độ sâu read/write độc lập từ 1 đến 8; `WSTRB` ở chế độ `HONOR` hoặc `REJECT` |
 | AHB-Lite | Data 32 bit, địa chỉ theo byte | Ghi nhỏ hơn word ở chế độ `HONOR` hoặc `REJECT`; ánh xạ lane `LITTLE`, `BE8` hoặc `BE32` |
 
@@ -63,6 +65,8 @@ Read và write AXI4-Lite dùng chung một CSR engine. Bộ phân xử round-rob
 Với AXI4-Lite/AHB-Lite, `Asynchronous=0` dùng FIFO request/response một clock và không khai triển bộ đồng bộ CDC. `Asynchronous=1` dùng clock register trong workbook và FIFO hai clock. Cả hai cấu hình dùng chung một RTL với parameter `PARA_ASYNCHRONOUS`. APB4 giữ nguyên kiến trúc clock hiện có.
 
 Với APB4, cấu hình tùy chọn `Register Event Sideband` mặc định bằng `0` nếu sheet không khai báo. Đặt thành `1` để sinh các xung `o_reg_rd_en`/`o_reg_wr_en` một chu kỳ và các output địa chỉ `o_reg_rd_addr`/`o_reg_wr_addr`. Read event báo các lần đọc đúng căn chỉnh, kể cả địa chỉ chưa ánh xạ. Write event báo lần ghi được chấp nhận vào thanh ghi đã ánh xạ có field cho phép software ghi. Địa chỉ output bằng 0 khi event không hoạt động. Ví dụ APB4 bật tùy chọn này.
+
+Ví dụ, thanh ghi APB 32-bit reset bằng `0xFFFFFFFF`, được ghi `0x12345678` với `PSTRB=4'b0011` và `i_slverr_en=0`, chỉ cập nhật hai byte thấp; đọc lại được `0xFFFF5678`. Tắt `i_slverr_en` chỉ tắt phản hồi lỗi, không tắt byte strobe.
 
 ### Field write-only
 
@@ -100,6 +104,7 @@ Coverage regression sinh lại RTL của cả ba ví dụ từ workbook rồi ch
 
 | Version | Date | Change | Verification |
 |---|---|---|---|
+| 3.6 | 2026-11-21 | Validate field syntax/bounds/overlap and module identifiers; align APB address checks to 8/16/32-bit data widths; correct the partial-strobe regression expectation; guard repeated-bank count overrides; fix and safely serialize debug JSON. | Regression scripts not run for this change. |
 | 3.5 | 2026-11-08 | Add opt-in `--vlsit-style` output for VLSIT RTL compliance; use range-based functions to decode parameterized register groups without generated guarded-case chains; add functional comments, named AXI byte width, and retain original RTL statements in style formatting. Update project metadata in `Debug/debug.json`. | Generator regression 27/27 PASS; Golden quick regression PASS; generated cluster CSR rule check 0 errors and 1 justified HIE-02 warning; Verilator lint 0 errors and 2 unused AXI4-Lite PROT warnings. |
 | 3.4 | 2026-11-07 | **Fix: readable repeated registers returned 0.** The read-data decode put each repeated register group (`PARAMETERIZED`) in its own `case` with `default: w_rdata_nxt = '0`, and these cases ran one after another, so the default of a later group cleared the read data of an earlier group. Only the last group could be read back (found when the `ro` register `mkv_e_chn` of the MKV block cipher IP read 0 while `mkv_d_chn` read the loaded value). Now every element of every repeated group is an item of the one read `case`, with one `default`; the read value of a register no longer depends on any other register. The ports, parameters and the write path do not change; the read data of fixed registers and of the last group are unchanged. | `sim/tests/generator_test` checks that the read decode has one `default` and one `case` and that every element is an item (27 of 27 checks); `sim/tests/golden_test --quick` passes; the three examples were regenerated; the MKV IP reads both channel chain registers back correctly. |
 | 3.3 | 2026-11 | `w_` prefix for the combinational mask and shorter `i_hw_clr_` ports; behavior unchanged | golden and protocol regressions |

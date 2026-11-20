@@ -19,7 +19,9 @@ def build_parameterized_read_decode(reg_list, address_name):
     begin
       w_decode_{name} = '0;
       w_idx = '0;
-      if ((32'(i_addr) >= {reg.base_parameter})
+      if (({reg.count_parameter} >= 32'd1)
+          & ({reg.count_parameter} <= {reg.max_parameter})
+          & (32'(i_addr) >= {reg.base_parameter})
           & (32'(i_addr) < ({reg.base_parameter} + ({reg.count_parameter} * {reg.stride_parameter})))
           & (((32'(i_addr) - {reg.base_parameter}) % {reg.stride_parameter}) == 32'd0)) begin
         w_idx = (32'(i_addr) - {reg.base_parameter}) / {reg.stride_parameter};
