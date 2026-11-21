@@ -37,30 +37,39 @@ FULL = [(0, 1, 10000, 10000), (0, 2, 10000, 10000), (0, 4, 10000, 10000),
 QUICK = [(0, 2, 10000, 10000), (1, 2, 10000, 33000)]
 
 MUTANTS = [
+    # The expressions follow the byte-strobe form of generator 3.6 (field bits are qualified by w_wmask lane masks).
     ('rwi: hardware load wins over a software write',
-     "(w_we_engine) ? reg_wdata[19]\n                               : (i_hw_we_engine_start) ? i_hw_wdata_engine_start",
-     "(i_hw_we_engine_start) ? i_hw_wdata_engine_start\n                               : (w_we_engine) ? reg_wdata[19]"),
+     "assign w_engine_start_nxt = (w_we_engine & (|w_wmask[19])) ? ((reg_wdata[19] & w_wmask[19])\n"
+     "                            | ((i_hw_we_engine_start ? i_hw_wdata_engine_start : reg_engine_start) & ~w_wmask[19]))\n"
+     "                          : (i_hw_we_engine_start ? i_hw_wdata_engine_start : reg_engine_start);",
+     "assign w_engine_start_nxt = (i_hw_we_engine_start) ? i_hw_wdata_engine_start\n"
+     "                          : ((w_we_engine & (|w_wmask[19])) ? ((reg_wdata[19] & w_wmask[19]) | (reg_engine_start & ~w_wmask[19])) : reg_engine_start);"),
     ('w1c: software clear wins over a hardware load',
-     "(i_hw_we_engine_fault) ? i_hw_wdata_engine_fault\n                               : (w_we_engine) ? (~reg_wdata[18] & reg_engine_fault)",
-     "(w_we_engine) ? (~reg_wdata[18] & reg_engine_fault)\n                               : (i_hw_we_engine_fault) ? i_hw_wdata_engine_fault"),
+     "(i_hw_we_engine_fault) ? i_hw_wdata_engine_fault\n"
+     "                          : ((w_we_engine & (|w_wmask[18])) ? (reg_engine_fault & ~(reg_wdata[18] & w_wmask[18])) : reg_engine_fault)",
+     "((w_we_engine & (|w_wmask[18])) ? (reg_engine_fault & ~(reg_wdata[18] & w_wmask[18]))\n"
+     "                          : (i_hw_we_engine_fault ? i_hw_wdata_engine_fault : reg_engine_fault))"),
     ('w0c: a 1 written clears instead of a 0',
-     "(reg_wdata[17] & reg_engine_pending)", "(~reg_wdata[17] & reg_engine_pending)"),
+     "(reg_engine_pending & (reg_wdata[17] | ~w_wmask[17]))", "(reg_engine_pending & ~(reg_wdata[17] & w_wmask[17]))"),
     ('w2c: clears only when the bit is written 1',
-     "(w_we_engine) ? '0\n                                  : reg_engine_overflow",
-     "(w_we_engine & reg_wdata[16]) ? '0\n                                  : reg_engine_overflow"),
+     "((w_we_engine & (|reg_wstrb)) ? '0 : reg_engine_overflow)",
+     "((w_we_engine & reg_wdata[16]) ? '0 : reg_engine_overflow)"),
     ('r2c: a read does not clear',
-     "(w_rd_engine) ? '0", "(1'b0) ? '0"),
+     "(w_rd_engine ? '0 : reg_engine_done)", "(1'b0 ? '0 : reg_engine_done)"),
     ('r2c: a read clears every monitor index',
      "(w_rd_monitor[gen_idx] ? '0", "((|w_rd_monitor) ? '0"),
     ('PSTRB check removed',
-     "(~&i_apb_pstrb & i_apb_pwrite)", "1'b0"),
+     "(~&i_apb_pstrb[LPARA_STRB_W-1:0] & i_apb_pwrite)", "1'b0"),
+    ('PSTRB lane mask ignored (whole word written)',
+     "{8{reg_wstrb[gen_lane]}}", "{8{1'b1}}"),
     ('PPROT check removed',
      "i_protect_en ? ~i_apb_pprot[1] : 1'b1", "1'b1"),
     ('monitor write decode uses the wrong stride',
      "w_we_monitor[gen_idx] = w_wr_en & (32'(reg_addr) == (LPARA_MONITOR_BASE_OFFSET + (gen_idx * LPARA_MONITOR_OFFSET_STRIDE)))",
      "w_we_monitor[gen_idx] = w_wr_en & (32'(reg_addr) == (LPARA_MONITOR_BASE_OFFSET + (gen_idx * 32'd8)))"),
     ('rw field takes the wrong PWDATA bits',
-     "(w_we_engine) ? reg_wdata[23:20] : reg_engine_mode", "(w_we_engine) ? reg_wdata[22:19] : reg_engine_mode"),
+     "((reg_wdata[23:20] & w_wmask[23:20]) | (reg_engine_mode & ~w_wmask[23:20]))",
+     "((reg_wdata[22:19] & w_wmask[23:20]) | (reg_engine_mode & ~w_wmask[23:20]))"),
 ]
 
 fails = []

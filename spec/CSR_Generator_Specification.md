@@ -107,7 +107,7 @@ Status legend used in Part A: **[implemented]** the behavior exists in the curre
 | Generator version | 3.6 (`VERSION` in `CSR_Generation.py`) |
 | RTL rule baseline | VLSIT RTL Design Rule v2 (naming, port layout, header, process labels) |
 | Existing verification evidence | Generator regression and AXI4-Lite/AHB-Lite protocol simulation results are recorded in C.20.7; APB4 2.4 evidence remains in B.15.5 |
-| Version 3.6 status | Adds field range/overlap validation, bus-width-aware APB alignment, a time-zero guard for invalid parameterized counts, safe debug JSON encoding with a corrected `Description` key, and an APB partial-strobe regression expectation matching the byte-mask behavior. Regression scripts have not been run for this revision. |
+| Version 3.6 status | Adds field range/overlap validation, bus-width-aware APB alignment, a time-zero guard for invalid parameterized counts, safe debug JSON encoding with a corrected `Description` key, and an APB partial-strobe regression expectation matching the byte-mask behavior. Regression run on 2026-11-22: generator tests 27 of 27, protocol checks 8 lint and 8 simulation, APB4 coverage line 97.14 %, branch 95.26 %, toggle 79.33 %, golden test PASS with 11 of 11 injected mutants detected (mutant patterns in `sim/tests/golden_test/run_golden_test.py` updated to the byte-lane expressions). |
 | Version 3.2 status (historical) | `wo` hardware-clear is generated and exercised on APB4, AXI4-Lite, and AHB-Lite; generator, golden-map, protocol, and coverage regressions pass (coverage results in `sim/results/coverage/`) |
 | Not done | CDC/RDC signoff, synthesis/area characterization, formal equivalence across versions |
 
@@ -250,7 +250,7 @@ A sheet has two tables, read from top to bottom:
 | `Data Width` | 32 | Width of `PWDATA` and `PRDATA` | APB4: 8, 16, or 32; AXI4-Lite/AHB-Lite: 32 |
 | `Address Width` | 16 | Width of `PADDR` | 1 to 32, and large enough for the natural alignment of the selected data width |
 | `Asynchronous` | 0 or 1 | Default of the module parameter `PARA_ASYNCHRONOUS` | Must be 0 or 1 |
-| `Write Strobe` | 4 | Informational row of the template; not read; the strobe width is 4 | None |
+| `Write Strobe` | 4 | Informational row of the template; not read; the strobe width is the APB data width divided by 8 (1, 2 or 4) | None |
 
 A key matches when the label contains the words above.
 
@@ -742,7 +742,7 @@ This document specifies two things: the tool (Section B.10.2, tool operations TO
 
 **Included:** the command line and workbook reader of `CSR_Generation.py`; one generated RTL module with parameter-selected synchronous and asynchronous clock paths; the field types `rw`, `ro`, `rwi`, `w1c`, `w0c`, `w2c`, and `r2c`; `NONE`, `FIXED`, and `PARAMETERIZED` repeated-register modes; the APB4 Completer behavior including error responses; the placeholder synchronizer model `m_csr_sync`; the generated `filelist.f` and per-run `Debug/debug.json`; and the checked-in APB4 example outputs under `examples/APB4_Synchronous/`.
 
-**Excluded:** field-bit overlap checking and other design-specific semantic review of the workbook (the generator checks repeat metadata, identifiers, address alignment, address width, and address overlap); protocols other than APB; byte-lane (sparse) writes; data widths other than 32 bits and address widths other than 16 bits; interrupt aggregation; the technology synchronizer cell (the integrator replaces `m_csr_sync`); the connection of the module to the rest of the IP.
+**Excluded:** design-specific semantic review of the workbook beyond what the generator checks (repeat metadata, identifiers, field range and bit overlap, address alignment, address width, and address overlap); sparse register layouts other than the byte-lane write mask of PSTRB; data widths other than 8, 16 and 32 bits on APB4 (AXI4-Lite and AHB-Lite are 32 bits) and address widths outside 1 to 32 bits; interrupt aggregation; the technology synchronizer cell (the integrator replaces `m_csr_sync`); the connection of the module to the rest of the IP.
 
 #### B.1.2 Deployment assumptions
 
@@ -796,7 +796,7 @@ This document specifies two things: the tool (Section B.10.2, tool operations TO
 
 | Standard | Revision / profile | Role implemented | Options | Deviations |
 |---|---|---|---|---|
-| AMBA APB | IHI 0024D, APB4 profile | Completer | PSTRB, PPROT, PSLVERR present; 32-bit data, 16-bit address; PWAKEUP, PAUSER, PWUSER, PRUSER, PBUSER, and check signals absent | DEV-001: after an error response, PSLVERR stays HIGH until the next SETUP phase, although REF-001 section 3.4 recommends LOW when PSEL, PENABLE, or PREADY is LOW (a recommendation, not a requirement). DEV-002: with `i_slverr_en` = 1, partial writes are rejected; when it is 0, the selected PSTRB lanes are written. REF-001 section 3.2.1 permits a documented access-type restriction. DEV-003: with `i_slverr_en` = 0, PSLVERR keeps its last value (ERR-004 of Section B.12). |
+| AMBA APB | IHI 0024D, APB4 profile | Completer | PSTRB, PPROT, PSLVERR present; 8-, 16- or 32-bit data and the address width set in the workbook (the checked-in examples use 32-bit data); PWAKEUP, PAUSER, PWUSER, PRUSER, PBUSER, and check signals absent | DEV-001: after an error response, PSLVERR stays HIGH until the next SETUP phase, although REF-001 section 3.4 recommends LOW when PSEL, PENABLE, or PREADY is LOW (a recommendation, not a requirement). DEV-002: with `i_slverr_en` = 1, partial writes are rejected; when it is 0, the selected PSTRB lanes are written. REF-001 section 3.2.1 permits a documented access-type restriction. DEV-003: with `i_slverr_en` = 0, PSLVERR keeps its last value (ERR-004 of Section B.12). |
 
 ### B.3 Requirements and traceability
 
@@ -816,7 +816,7 @@ Areas: GEN (the tool), IF (interfaces), FUNC (function), CLK, RESET, ERR, PARAM,
 | REQ-GEN-010 | The generated module and `m_csr_sync` shall pass `vlsit_rtl_check.py check` without an ERROR and shall pass verilator and slang lint without an error. | REF-003 | All configurations | Rule check and lint TEST-009 |
 | REQ-GEN-011 | For `FIXED`, the tool shall expand a register template into `COUNT` registers named `<base>_0` through `<base>_<COUNT-1>` at `base_offset + index × stride`; each copy shall have the same fields, reset values, field behavior, and separate scalar ports. `COUNT` shall be at least 1. | REF-002; REF-006 §3.1, §4 | `FIXED` rows | Directed generation checks |
 | REQ-GEN-012 | For `PARAMETERIZED`, the tool shall emit `PARA_<BASE>_COUNT` with the workbook count as its default, packed-array field ports, indexed state and address decode. The legal count shall be 1 through `MAX COUNT`; the group's full maximum address range shall be reserved against overlap. | REF-002; REF-006 §3.2, §4 | `PARAMETERIZED` rows | Elaboration and address-map checks |
-| REQ-IF-001 | The generated module shall be an APB4 Completer with the ports PSEL, PENABLE, PWRITE, PADDR (16 bits), PWDATA (32 bits), PSTRB (4 bits), PPROT (3 bits) as inputs and PREADY, PRDATA (32 bits), PSLVERR as outputs, named with the tag `apb` per REF-003 PRT-01, and shall have no other APB signal. | REF-001 §2.1; REF-003 PRT-01 | All configurations | Lint, port check TEST-009 |
+| REQ-IF-001 | The generated module shall be an APB4 Completer with the ports PSEL, PENABLE, PWRITE, PADDR (workbook address width), PWDATA (APB data width: 8, 16 or 32 bits), PSTRB (data width / 8 bits, always a byte-lane mask), PPROT (3 bits) as inputs and PREADY, PRDATA (APB data width), PSLVERR as outputs, named with the tag `apb` per REF-003 PRT-01, and shall have no other APB signal. | REF-001 §2.1; REF-003 PRT-01 | All configurations | Lint, port check TEST-009 |
 | REQ-IF-002 | The generated module shall have a static port list containing both `i_clk_apb`/`i_rst_n_apb` and `i_clk_reg`/`i_rst_n_reg`. `PARA_ASYNCHRONOUS=0` selects the APB clock/reset for the register bank; value 1 selects the register clock/reset and CDC path. | REF-003 PRT-02 | All configurations | Lint, port check TEST-009 |
 | REQ-IF-003 | For each non-reserved field the module shall expose: `ro` input `i_{reg}_{field}`; `rw` output `o_{reg}_{field}`; and `rwi`, `w1c`, `w0c`, `w2c`, or `r2c` output `o_{reg}_{field}` plus same-width `i_hw_wdata_{reg}_{field}` and one-bit `i_hw_we_{reg}_{field}` inputs. `reserved` fields have no ports. | REF-002 register.gen_port_logic | All configurations | Port check and simulation |
 | REQ-IF-004 | Every output of the module shall be a flip-flop output, so no combinational path leads from an input to an output. | REF-002 | All configurations | Inspection, rule check TEST-009 |
@@ -857,8 +857,8 @@ Areas: GEN (the tool), IF (interfaces), FUNC (function), CLK, RESET, ERR, PARAM,
 
 | Configuration ID | Enabled features | Disabled features | Interfaces / widths | Intended use | Verification target |
 |---|---|---|---|---|---|
-| CFG-SYNC | Elaborate with `PARA_ASYNCHRONOUS=0`; workbook `Asynchronous=0` supplies this default | CDC synchronizers and request/acknowledge path are removed | APB4 Completer 16-bit address, 32-bit data; static ports include both clock/reset pairs | All logic uses `i_clk_apb` / `i_rst_n_apb`; register clock/reset ports are unused | Verification required for this elaboration |
-| CFG-ASYNC | Elaborate with `PARA_ASYNCHRONOUS=1`; workbook `Asynchronous=1` supplies this default | None | APB4 Completer 16-bit address, 32-bit data; static ports include both clock/reset pairs | APB uses `i_clk_apb`; the register bank uses `i_clk_reg` | Verification required for this elaboration, including CDC analysis |
+| CFG-SYNC | Elaborate with `PARA_ASYNCHRONOUS=0`; workbook `Asynchronous=0` supplies this default | CDC synchronizers and request/acknowledge path are removed | APB4 Completer, workbook address width, 32-bit data in the checked-in example; static ports include both clock/reset pairs | All logic uses `i_clk_apb` / `i_rst_n_apb`; register clock/reset ports are unused | Verification required for this elaboration |
+| CFG-ASYNC | Elaborate with `PARA_ASYNCHRONOUS=1`; workbook `Asynchronous=1` supplies this default | None | APB4 Completer, workbook address width, 32-bit data in the checked-in example; static ports include both clock/reset pairs | APB uses `i_clk_apb`; the register bank uses `i_clk_reg` | Verification required for this elaboration, including CDC analysis |
 
 The reference workbook is used only to illustrate the generator. Field ports follow the supplied workbook (DEC-002). `CSR` and `ASYNC_CSR` are conventional sheet names, not separate RTL architectures: either sheet emits one static-port module, and its `Asynchronous` cell supplies the default parameter value. A module instance may override `PARA_ASYNCHRONOUS` at elaboration.
 
