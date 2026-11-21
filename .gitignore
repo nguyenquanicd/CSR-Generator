@@ -3,4 +3,8 @@ __pycache__/
 *.pyc
 *.vvp
 *.vcd
+*.log
 lint_run_*.log
+
+# Keep simulation source and testbenches; ignore generated simulation results.
+/sim/results/

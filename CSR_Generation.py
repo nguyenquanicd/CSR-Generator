@@ -685,11 +685,14 @@ class parameterized_register:
         self.rtl = f'''
   // Parameterized register group {n}: indexed field updates and per-copy storage.
   // Flag parameter overrides outside the declared bank size; legal values omit this branch.
+  // Simulation-only check; VLSIT_SYNTHESIS excludes it from synthesis and lint (SCP-03).
+`ifndef VLSIT_SYNTHESIS
   generate
     if (({self.count_parameter} < 32'd1) || ({self.count_parameter} > {self.max_parameter})) begin : gen_{n}_invalid_count
       initial $error("{self.count_parameter} must be between 1 and {self.max_count}");
     end
   endgenerate
+`endif
   generate
     for (genvar gen_idx = 0; (gen_idx < {self.count_parameter}) && (gen_idx < {self.max_parameter}); gen_idx++) begin : gen_{n}
 {next_part}    always_comb begin : p_com_{n}_value

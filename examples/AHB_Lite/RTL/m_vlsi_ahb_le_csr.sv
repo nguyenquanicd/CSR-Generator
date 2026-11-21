@@ -739,11 +739,14 @@ module m_vlsi_ahb_le_csr #(
 
   // Parameterized register group monitor: indexed field updates and per-copy storage.
   // Flag parameter overrides outside the declared bank size; legal values omit this branch.
+  // Simulation-only check; VLSIT_SYNTHESIS excludes it from synthesis and lint (SCP-03).
+`ifndef VLSIT_SYNTHESIS
   generate
     if ((PARA_MONITOR_COUNT < 32'd1) || (PARA_MONITOR_COUNT > LPARA_MONITOR_MAX_COUNT)) begin : gen_monitor_invalid_count
       initial $error("PARA_MONITOR_COUNT must be between 1 and 4");
     end
   endgenerate
+`endif
   generate
     for (genvar gen_idx = 0; (gen_idx < PARA_MONITOR_COUNT) && (gen_idx < LPARA_MONITOR_MAX_COUNT); gen_idx++) begin : gen_monitor
     assign w_monitor_threshold_nxt[gen_idx] = (w_we_monitor[gen_idx] & (|w_wmask[23:20])) ? ((reg_wdata[23:20] & w_wmask[23:20]) | (reg_monitor_threshold[gen_idx] & ~w_wmask[23:20])) : reg_monitor_threshold[gen_idx];
