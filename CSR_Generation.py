@@ -17,6 +17,11 @@
 #   Test: sim/tests/generator_test (read decode structure), sim/tests/golden_test, examples regenerated.
 # Version 3.3: use w_ for the combinational mask and i_hw_clr_ for shorter wo-clear ports; behavior is unchanged.
 # Version 3.2: add a hardware-clear input for write-only (wo) fields; clear overrides a write.
+# Version 3.7: every field has its own software event (a write whose strobes cover the field's byte lanes)
+#   and its own hardware event (i_hw_we_*, i_hw_clr_*); a hardware event has priority over a software event
+#   in the same cycle for every type that has a hardware event: rwi now follows the hardware load (version 3.6:
+#   software first), and a w2c field is cleared only by a write that covers its own byte lanes (version 3.6: any
+#   strobed write to the register cleared it), so a field is never changed by an event of another field.
 # Version 3.1: add the write-only (wo) field type: software writes are stored and exposed
 #   to hardware, while software reads return zero.
 # Version 3.0: add AXI4-Lite/AHB-Lite register interfaces, programmable outstanding policy,
@@ -28,7 +33,7 @@
 # Version 2.3: add fixed and parameterized register replication
 # Version 2.2: add w0c, w2c, and r2c field types and a parameter-selected clock architecture
 # Version 2.1: a hardware write to a w1c field has priority over a software clear in the same cycle
-#   (version 2.0: software first); rwi keeps software first.
+#   (version 2.0: software first); rwi kept software first until version 3.7.
 # Version 2.0: the generated RTL follows the VLSIT RTL Design Rule v2
 #   (spec_template/VLSIT_RTL_Design_Rule.md of VLSIT_RTL_Generator_AI_Model):
 #   names (i_clk_apb, i_apb_*, LPARA_*, reg_*, w_*), port layout, header,
@@ -47,7 +52,7 @@ from datetime import date, datetime
 from CSR_Protocol_Generation import (ASYNC_FIFO_MODEL, ASYNC_FIFO_MODULE, SYNC_FIFO_MODEL,
                                     SYNC_FIFO_MODULE, ahblite_protocol, axil_protocol)
 
-VERSION = "3.6"
+VERSION = "3.7"
 RSVD_KEY = 'reserved'
 VALID_BIT_TYPES = {'rw', 'ro', 'rwi', 'w1c', 'w0c', 'w2c', 'r2c', 'wo'}
 FLOW_NAME = "VLSIT RTL Generator AI Automation Flow"
@@ -515,10 +520,9 @@ class bit:
 '''
         elif self.type == 'rwi':
             self.rtl += f'''
-  // {r}_{self.name} next value (rwi): software-selected byte lanes override hardware updates.
-  assign {nxt} = {sw_we} ? ((reg_wdata{self.field} & {mask})
-                            | ((i_hw_we_{r}_{self.name} ? i_hw_wdata_{r}_{self.name} : {cur}) & ~{mask}))
-                          : (i_hw_we_{r}_{self.name} ? i_hw_wdata_{r}_{self.name} : {cur});
+  // {r}_{self.name} next value (rwi): hardware load wins; otherwise selected written bits load.
+  assign {nxt} = (i_hw_we_{r}_{self.name}) ? i_hw_wdata_{r}_{self.name}
+                          : ({sw_we} ? ((reg_wdata{self.field} & {mask}) | ({cur} & ~{mask})) : {cur});
 '''
         elif self.type == 'w1c':
             self.rtl += f'''
@@ -534,9 +538,9 @@ class bit:
 '''
         elif self.type == 'w2c':
             self.rtl += f'''
-  // {r}_{self.name} next value (w2c): hardware load wins; any strobed write clears the field.
+  // {r}_{self.name} next value (w2c): hardware load wins; a write covering the field's byte lanes clears it.
   assign {nxt} = (i_hw_we_{r}_{self.name}) ? i_hw_wdata_{r}_{self.name}
-                          : ((w_we_{r} & (|reg_wstrb)) ? '0 : {cur});
+                          : ({sw_we} ? '0 : {cur});
 '''
         elif self.type == 'r2c':
             self.rtl += f'''
@@ -657,9 +661,8 @@ class parameterized_register:
                 elif b.type == 'rw':
                     expr = f"{sw_field_we} ? ((reg_wdata{b.field} & {mask}) | ({cur} & ~{mask})) : {cur}"
                 elif b.type == 'rwi':
-                    expr = (f"{sw_field_we} ? ((reg_wdata{b.field} & {mask}) | "
-                            f"((i_hw_we_{n}_{b.name}[gen_idx] ? i_hw_wdata_{n}_{b.name}[gen_idx] : {cur}) & ~{mask})) "
-                            f": (i_hw_we_{n}_{b.name}[gen_idx] ? i_hw_wdata_{n}_{b.name}[gen_idx] : {cur})")
+                    expr = (f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] "
+                            f": ({sw_field_we} ? ((reg_wdata{b.field} & {mask}) | ({cur} & ~{mask})) : {cur})")
                 elif b.type == 'w1c':
                     expr = (f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] "
                             f": ({sw_field_we} ? ({cur} & ~(reg_wdata{b.field} & {mask})) : {cur})")
@@ -667,7 +670,7 @@ class parameterized_register:
                     expr = (f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] "
                             f": ({sw_field_we} ? ({cur} & (reg_wdata{b.field} | ~{mask})) : {cur})")
                 elif b.type == 'w2c':
-                    expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : (({sw_we} & (|reg_wstrb)) ? '0 : {cur})"
+                    expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : ({sw_field_we} ? '0 : {cur})"
                 elif b.type == 'r2c':
                     expr = f"(i_hw_we_{n}_{b.name}[gen_idx]) ? i_hw_wdata_{n}_{b.name}[gen_idx] : (w_rd_{n}[gen_idx] ? '0 : {cur})"
                 else:

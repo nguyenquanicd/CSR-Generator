@@ -574,12 +574,25 @@ module tb_csr_golden;
       for (a = 0; a < NI; a = a + 1) begin
         do_reset(1'b1, 1'b1);
         do_wr(a, 32'h0);
-        // rwi: software wins over a hardware load in the same cycle
+        // rwi: a hardware load wins over a software write in the same cycle (generator 3.7)
         coll_wr(a, 32'h0008_0000, 0, 1'b0);
-        chk(o_f_flat[a * 5 + 0] === 1'b1, "rwi: software 1 wins over hardware 0");
+        m_f[a][0] = 1'b0;
+        chk(o_f_flat[a * 5 + 0] === 1'b0, "rwi: hardware 0 wins over software 1");
         coll_wr(a, 32'h0000_0000, 0, 1'b1);
-        chk(o_f_flat[a * 5 + 0] === 1'b0, "rwi: software 0 wins over hardware 1");
+        m_f[a][0] = 1'b1;
+        chk(o_f_flat[a * 5 + 0] === 1'b1, "rwi: hardware 1 wins over software 0");
         cov_rwi_sw = cov_rwi_sw + 2;
+        do_wr(a, 32'h0000_0000);                   // software write without a collision still loads the field
+        chk(o_f_flat[a * 5 + 0] === 1'b0, "rwi: a software write loads the field when no hardware load is active");
+        do_wr(a, 32'h0008_0000);
+        chk(o_f_flat[a * 5 + 0] === 1'b1, "rwi: a software write of 1 loads the field when no hardware load is active");
+        // events of different fields are independent: a hardware load of one field does not change the software write to another
+        coll_wr(a, 32'h0000_0000, 1, 1'b1);        // software writes rwi = 0 while hardware loads the w1c field with 1
+        m_f[a][1] = 1'b1;
+        chk(o_f_flat[a * 5 + 0] === 1'b0, "independence: rwi follows its software write while another field is loaded by hardware");
+        chk(o_f_flat[a * 5 + 1] === 1'b1, "independence: w1c follows its hardware load while another field is written by software");
+        do_wr(a, 32'h0004_0000);                   // clear the w1c field again
+        chk(o_f_flat[a * 5 + 1] === 1'b0, "independence: w1c cleared by its own software event");
         // w1c: hardware load wins over a software clear
         hw_pulse(a, 1, 1'b1);
         coll_wr(a, 32'h0004_0000, 1, 1'b1);
@@ -688,6 +701,16 @@ module tb_csr_golden;
         chk(o_mode_flat[3:0] === 4'h5, "slverr off: unstrobed mode byte is preserved");
         do_rd(0);
         chk(last_rdata[23:20] === 4'h5, "slverr off: partial write readback preserves unstrobed mode bits");
+        // generator 3.7: only a write whose strobes cover the field's byte lane clears a w2c field
+        hw_pulse(0, 3, 1'b1);
+        chk(o_f_flat[3] === 1'b1, "w2c: loaded by hardware");
+        apb(1'b1, 16'h0000, 32'hFFFF_FFFF, 4'b1011, 3'b000, 1'b0);   // lane 2 (bits 23:16) not strobed
+        chk(last_err === 1'b0, "w2c lane test: no error with slverr off");
+        m_write(0, 32'hFFFF_FFFF, 4'b1011);
+        chk(o_f_flat[3] === 1'b1, "w2c: a write that does not cover the field's byte lane keeps the field");
+        apb(1'b1, 16'h0000, 32'h0000_0000, 4'b0100, 3'b000, 1'b0);   // lane 2 strobed
+        m_write(0, 32'h0000_0000, 4'b0100);
+        chk(o_f_flat[3] === 1'b0, "w2c: a write that covers the field's byte lane clears it");
       end
       // misaligned address
       apb(1'b1, 16'h0001, 32'h00B0_0000, 4'hF, 3'b000, 1'b0);

@@ -73,7 +73,7 @@ def fig_ro():
 def hw_priority(name, title, kind):
     """Hardware-first types: w1c, w0c, w2c, r2c."""
     f = F(name, title)
-    sel = "w_rd_<reg>" if kind == "r2c" else "w_we_<reg>"
+    sel = "w_rd_<reg>" if kind == "r2c" else ("w_we_<reg> & lane mask" if kind == "w2c" else "w_we_<reg>")
     f.port_in("se", sel, 0, 0)
     f.port_in("hwe", "i_hw_we_<reg>_<field>", 0, 2.4)
     f.port_in("hwd", "i_hw_wdata_<reg>_<field>", 0, 3.4)
@@ -125,20 +125,20 @@ def fig_reset_values():
 
 
 def fig_rwi():
-    f = F("L03", "L03  Field type rwi, one bit: software write over hardware load over hold")
-    f.port_in("we", "w_we_<reg>", 0, 0)
+    f = F("L03", "L03  Field type rwi, one bit: hardware load over software write over hold")
+    f.port_in("we", "w_we_<reg> & lane mask", 0, 0)
     f.port_in("wd", "reg_wdata[n]", 0, 1)
-    f.port_in("hwe", "i_hw_we_<reg>_<field>", 0, 2.6)
-    f.port_in("hwd", "i_hw_wdata_<reg>_<field>", 0, 3.6)
-    f.gate("mux_hw", "MUX2", 1, 3, note="hardware load")
-    f.gate("mux_sw", "MUX2", 2, 1, note="software write")
-    f.net("hwe", "mux_hw.S")
-    f.net("hwd", "mux_hw.I1")
-    f.net("mux_hw.Y", "mux_sw.I0", name="hold or HW")
+    f.port_in("hwe", "i_hw_we_<reg>_<field>", 0, 2.4)
+    f.port_in("hwd", "i_hw_wdata_<reg>_<field>", 0, 3.4)
+    f.gate("mux_sw", "MUX2", 3, 0, note="software write")
     f.net("we", "mux_sw.S")
     f.net("wd", "mux_sw.I1")
-    ff_block(f, 3, 1, "mux_sw.Y", "o_<reg>_<field>[n]", "w_<reg>_value[n] (read mux)", clk_row=4.8)
-    f.net("ff.Q", ["o_q", "o_v", "mux_hw.I0"], name="reg_<reg>_<field>")
+    f.gate("mux_hw", "MUX2", 4, 2.4, note="hardware load wins")
+    f.net("mux_sw.Y", "mux_hw.I0", name="hold or SW")
+    f.net("hwe", "mux_hw.S")
+    f.net("hwd", "mux_hw.I1")
+    ff_block(f, 5, 2.4, "mux_hw.Y", "o_<reg>_<field>[n]", "w_<reg>_value[n] (read mux)", clk_row=4.6)
+    f.net("ff.Q", ["o_q", "o_v", "mux_sw.I0"], name="reg_<reg>_<field>")
     return f
 
 
@@ -930,7 +930,7 @@ if __name__ == "__main__":
     for name, fn in (("L01_rw", fig_rw), ("L02_ro_reserved", fig_ro), ("L03_rwi", fig_rwi),
                      ("L04_w1c", lambda: hw_priority("L04", "L04  Field type w1c, one bit: hardware load, then software clear of the bits written 1, then hold", "w1c")),
                      ("L05_w0c", lambda: hw_priority("L05", "L05  Field type w0c, one bit: hardware load, then software clear of the bits written 0, then hold", "w0c")),
-                     ("L06_w2c", lambda: hw_priority("L06", "L06  Field type w2c, one bit: hardware load, then clear by any write to the register, then hold", "w2c")),
+                     ("L06_w2c", lambda: hw_priority("L06", "L06  Field type w2c, one bit: hardware load, then clear by a write covering the field's byte lane, then hold", "w2c")),
                      ("L07_r2c", lambda: hw_priority("L07", "L07  Field type r2c, one bit: hardware load, then clear by a read, then hold", "r2c")),
                      ("L08_reset_values", fig_reset_values),
                      ("L09_apb_decode", fig_apb_decode), ("L10_apb_complete", fig_apb_complete), ("L11_capture", fig_capture),
